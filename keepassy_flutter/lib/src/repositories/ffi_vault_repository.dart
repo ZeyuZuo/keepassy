@@ -65,16 +65,31 @@ typedef _SaveDart =
       Pointer<Utf8> keyfilePath,
     );
 
-typedef _JsonWithTwoIdsNative = _KeepassYFfiResult Function(
-  Pointer<Void> session,
-  Pointer<Utf8> arg1,
-  Pointer<Utf8> arg2,
-);
-typedef _JsonWithTwoIdsDart = _KeepassYFfiResult Function(
-  Pointer<Void> session,
-  Pointer<Utf8> arg1,
-  Pointer<Utf8> arg2,
-);
+typedef _JsonWithTwoIdsNative =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> arg1,
+      Pointer<Utf8> arg2,
+    );
+typedef _JsonWithTwoIdsDart =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> arg1,
+      Pointer<Utf8> arg2,
+    );
+
+typedef _JsonWithIdAndIntNative =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> id,
+      Int32 index,
+    );
+typedef _JsonWithIdAndIntDart =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> id,
+      int index,
+    );
 
 typedef _IsDirtyNative = _KeepassYFfiResult Function(Pointer<Void> session);
 typedef _IsDirtyDart = _KeepassYFfiResult Function(Pointer<Void> session);
@@ -167,9 +182,12 @@ class FfiVaultRepository implements VaultRepository {
         .lookupFunction<_JsonWithTwoIdsNative, _JsonWithTwoIdsDart>(
           'keepassy_attachment_bytes_json',
         );
-    _entryHistoryJson = _lib
-        .lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
-          'keepassy_entry_history_json',
+    _entryHistoryJson = _lib.lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+      'keepassy_entry_history_json',
+    );
+    _entryHistoryDetailJson = _lib
+        .lookupFunction<_JsonWithIdAndIntNative, _JsonWithIdAndIntDart>(
+          'keepassy_entry_history_detail_json',
         );
   }
 
@@ -192,6 +210,7 @@ class FfiVaultRepository implements VaultRepository {
   late final _JsonWithTwoIdsDart _removeAttachmentJson;
   late final _JsonWithTwoIdsDart _attachmentBytesJson;
   late final _JsonWithIdDart _entryHistoryJson;
+  late final _JsonWithIdAndIntDart _entryHistoryDetailJson;
 
   @override
   Future<OpenedVault> openLocal({
@@ -382,9 +401,7 @@ class FfiVaultRepository implements VaultRepository {
       final result = _attachmentBytesJson(session, idPtr, namePtr);
       final json = _readJsonObject(result);
       final bytesList = json['bytes'] as List<Object?>;
-      return Uint8List.fromList(
-        bytesList.cast<int>().toList(growable: false),
-      );
+      return Uint8List.fromList(bytesList.cast<int>().toList(growable: false));
     } finally {
       calloc.free(idPtr);
       calloc.free(namePtr);
@@ -454,11 +471,15 @@ class FfiVaultRepository implements VaultRepository {
     required String entryId,
     required int index,
   }) async {
-    // History detail is collapsed into the normal entry_detail path.
-    // The backend entry_history_json returns summaries; detail requires
-    // the index. For now, return the current entry detail (history detail
-    // via FFI needs a separate endpoint — deferred to future iteration).
-    return entryDetail(entryId);
+    final session = _requireSession();
+    final idPtr = entryId.toNativeUtf8();
+    try {
+      final result = _entryHistoryDetailJson(session, idPtr, index);
+      final json = _readJsonObject(result);
+      return EntryDetail.fromJson(json);
+    } finally {
+      calloc.free(idPtr);
+    }
   }
 
   @override

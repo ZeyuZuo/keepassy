@@ -37,6 +37,9 @@ class _VaultPageState extends State<VaultPage> {
   bool _dirty = false;
   bool _saving = false;
   String? _saveError;
+  bool _showHistory = false;
+  List<HistorySummary>? _history;
+  bool _loadingHistory = false;
 
   // Edit form controllers
   final _editTitleController = TextEditingController();
@@ -315,127 +318,118 @@ class _VaultPageState extends State<VaultPage> {
 
     showDialog<void>(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder: (context, setState) {
-              String generated = _generatePassword(
-                int.tryParse(lengthCtrl.text) ?? 20,
-                lowercase: lowercase,
-                uppercase: uppercase,
-                digits: digits,
-                symbols: symbols,
-                avoidAmbiguous: avoidAmbiguous,
-              );
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          String generated = _generatePassword(
+            int.tryParse(lengthCtrl.text) ?? 20,
+            lowercase: lowercase,
+            uppercase: uppercase,
+            digits: digits,
+            symbols: symbols,
+            avoidAmbiguous: avoidAmbiguous,
+          );
 
-              return AlertDialog(
-                title: const Text('Password generator'),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+          return AlertDialog(
+            title: const Text('Password generator'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          const Text('Length:'),
-                          const SizedBox(width: 12),
-                          SizedBox(
-                            width: 80,
-                            child: TextField(
-                              controller: lengthCtrl,
-                              keyboardType: TextInputType.number,
-                              onChanged:
-                                  (_) => setState(
-                                    () => generated = _generatePassword(
-                                      int.tryParse(lengthCtrl.text) ?? 20,
-                                      lowercase: lowercase,
-                                      uppercase: uppercase,
-                                      digits: digits,
-                                      symbols: symbols,
-                                      avoidAmbiguous: avoidAmbiguous,
-                                    ),
-                                  ),
+                      const Text('Length:'),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 80,
+                        child: TextField(
+                          controller: lengthCtrl,
+                          keyboardType: TextInputType.number,
+                          onChanged: (_) => setState(
+                            () => generated = _generatePassword(
+                              int.tryParse(lengthCtrl.text) ?? 20,
+                              lowercase: lowercase,
+                              uppercase: uppercase,
+                              digits: digits,
+                              symbols: symbols,
+                              avoidAmbiguous: avoidAmbiguous,
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      CheckboxListTile(
-                        title: const Text('Lowercase (a–z)'),
-                        value: lowercase,
-                        onChanged:
-                            (v) => setState(() => lowercase = v ?? true),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      CheckboxListTile(
-                        title: const Text('Uppercase (A–Z)'),
-                        value: uppercase,
-                        onChanged:
-                            (v) => setState(() => uppercase = v ?? true),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      CheckboxListTile(
-                        title: const Text('Digits (0–9)'),
-                        value: digits,
-                        onChanged:
-                            (v) => setState(() => digits = v ?? true),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      CheckboxListTile(
-                        title: const Text('Symbols (!@#…)'),
-                        value: symbols,
-                        onChanged:
-                            (v) => setState(() => symbols = v ?? true),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      CheckboxListTile(
-                        title: const Text('Avoid ambiguous (Il1O0)'),
-                        value: avoidAmbiguous,
-                        onChanged:
-                            (v) =>
-                                setState(() => avoidAmbiguous = v ?? false),
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      const SizedBox(height: 14),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: SelectableText(
-                          generated,
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 16,
                           ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                  const SizedBox(height: 14),
+                  CheckboxListTile(
+                    title: const Text('Lowercase (a–z)'),
+                    value: lowercase,
+                    onChanged: (v) => setState(() => lowercase = v ?? true),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
                   ),
-                  FilledButton(
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                      onAccept(generated);
-                    },
-                    child: const Text('Use password'),
+                  CheckboxListTile(
+                    title: const Text('Uppercase (A–Z)'),
+                    value: uppercase,
+                    onChanged: (v) => setState(() => uppercase = v ?? true),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  CheckboxListTile(
+                    title: const Text('Digits (0–9)'),
+                    value: digits,
+                    onChanged: (v) => setState(() => digits = v ?? true),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  CheckboxListTile(
+                    title: const Text('Symbols (!@#…)'),
+                    value: symbols,
+                    onChanged: (v) => setState(() => symbols = v ?? true),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  CheckboxListTile(
+                    title: const Text('Avoid ambiguous (Il1O0)'),
+                    value: avoidAmbiguous,
+                    onChanged: (v) =>
+                        setState(() => avoidAmbiguous = v ?? false),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: SelectableText(
+                      generated,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 16,
+                      ),
+                    ),
                   ),
                 ],
-              );
-            },
-          ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  onAccept(generated);
+                },
+                child: const Text('Use password'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -461,10 +455,7 @@ class _VaultPageState extends State<VaultPage> {
     if (pool.isEmpty) return '';
 
     if (avoidAmbiguous) {
-      pool = pool
-          .split('')
-          .where((c) => !ambiguous.contains(c))
-          .join('');
+      pool = pool.split('').where((c) => !ambiguous.contains(c)).join('');
     }
 
     final rand = Random.secure();
@@ -485,9 +476,9 @@ class _VaultPageState extends State<VaultPage> {
       );
       await File(result).writeAsBytes(bytes);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved $name')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Saved $name')));
     } on Object catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -513,6 +504,7 @@ class _VaultPageState extends State<VaultPage> {
         protect: false,
       );
       if (!mounted) return;
+      setState(() => _dirty = true);
       _selectEntry(entry);
     } on Object catch (err) {
       if (!mounted) return;
@@ -525,30 +517,27 @@ class _VaultPageState extends State<VaultPage> {
   Future<void> _removeAttachment(EntrySummary entry, String name) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Remove attachment'),
-            content: Text('Remove "$name"?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Remove'),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: const Text('Remove attachment'),
+        content: Text('Remove "$name"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
           ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
     );
     if (confirmed != true) return;
 
     try {
-      await widget.repository.removeAttachment(
-        entryId: entry.id,
-        name: name,
-      );
+      await widget.repository.removeAttachment(entryId: entry.id, name: name);
       if (!mounted) return;
+      setState(() => _dirty = true);
       _selectEntry(entry);
     } on Object catch (err) {
       if (!mounted) return;
@@ -567,45 +556,44 @@ class _VaultPageState extends State<VaultPage> {
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => StatefulBuilder(
-            builder: (context, setState) => AlertDialog(
-              title: const Text('Add custom field'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: keyCtrl,
-                    decoration: const InputDecoration(labelText: 'Field name'),
-                    autofocus: true,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: valueCtrl,
-                    decoration: const InputDecoration(labelText: 'Value'),
-                  ),
-                  const SizedBox(height: 8),
-                  CheckboxListTile(
-                    title: const Text('Protected'),
-                    value: protect,
-                    onChanged: (v) => setState(() => protect = v ?? false),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Add custom field'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: keyCtrl,
+                decoration: const InputDecoration(labelText: 'Field name'),
+                autofocus: true,
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Add'),
-                ),
-              ],
-            ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: valueCtrl,
+                decoration: const InputDecoration(labelText: 'Value'),
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                title: const Text('Protected'),
+                value: protect,
+                onChanged: (v) => setState(() => protect = v ?? false),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            ],
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Add'),
+            ),
+          ],
+        ),
+      ),
     );
 
     if (confirmed != true) return;
@@ -628,6 +616,7 @@ class _VaultPageState extends State<VaultPage> {
       if (!mounted) return;
       setState(() {
         _detail = updated;
+        _dirty = true;
         _editing = true;
       });
       _editTitleController.text = updated.title ?? '';
@@ -655,6 +644,7 @@ class _VaultPageState extends State<VaultPage> {
       if (!mounted) return;
       setState(() {
         _detail = updated;
+        _dirty = true;
         _editing = true;
       });
       _editTitleController.text = updated.title ?? '';
@@ -662,6 +652,60 @@ class _VaultPageState extends State<VaultPage> {
       _editPasswordController.text = updated.password ?? '';
       _editUrlController.text = updated.url ?? '';
       _editNotesController.text = updated.notes ?? '';
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
+  Future<void> _loadHistory() async {
+    final entryId = _selectedEntry?.id;
+    if (entryId == null) return;
+
+    setState(() {
+      _loadingHistory = true;
+      _showHistory = !_showHistory;
+    });
+
+    if (!_showHistory) {
+      setState(() => _loadingHistory = false);
+      return;
+    }
+
+    try {
+      final history = await widget.repository.entryHistory(entryId);
+      if (!mounted) return;
+      setState(() {
+        _history = history;
+        _loadingHistory = false;
+      });
+    } on Object catch (err) {
+      if (!mounted) return;
+      setState(() => _loadingHistory = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
+  Future<void> _viewHistoryDetail(HistorySummary summary) async {
+    final entryId = _selectedEntry?.id;
+    if (entryId == null) return;
+
+    try {
+      final snapshot = await widget.repository.entryHistoryDetail(
+        entryId: entryId,
+        index: summary.index,
+      );
+      if (!mounted) return;
+      setState(() {
+        _detail = snapshot;
+        _showHistory = false;
+        _editing = false;
+        _passwordVisible = false;
+      });
     } on Object catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -973,6 +1017,18 @@ class _VaultPageState extends State<VaultPage> {
                   onSaveEdit: _saveEdit,
                   onCancelEdit: _cancelEdit,
                   onDelete: _deleteEntry,
+                  onGeneratePassword: _showPasswordGenerator,
+                  onDownloadAttachment: _downloadAttachment,
+                  onAddAttachment: _addAttachment,
+                  onRemoveAttachment: _removeAttachment,
+                  onAddCustomField: _addCustomField,
+                  onRemoveCustomField: _removeCustomField,
+                  onToggleHistory: _loadHistory,
+                  onViewHistoryDetail: _viewHistoryDetail,
+                  showHistory: _showHistory,
+                  history: _history,
+                  loadingHistory: _loadingHistory,
+                  selectedEntry: _selectedEntry,
                 ),
               ),
             ],
@@ -1300,6 +1356,11 @@ class _DetailPane extends StatelessWidget {
     this.onRemoveAttachment,
     this.onAddCustomField,
     this.onRemoveCustomField,
+    this.onToggleHistory,
+    this.onViewHistoryDetail,
+    this.showHistory = false,
+    this.history,
+    this.loadingHistory = false,
     this.selectedEntry,
   });
 
@@ -1323,6 +1384,11 @@ class _DetailPane extends StatelessWidget {
   final void Function(EntrySummary, String)? onRemoveAttachment;
   final void Function()? onAddCustomField;
   final void Function(String)? onRemoveCustomField;
+  final VoidCallback? onToggleHistory;
+  final void Function(HistorySummary)? onViewHistoryDetail;
+  final bool showHistory;
+  final List<HistorySummary>? history;
+  final bool loadingHistory;
   final EntrySummary? selectedEntry;
 
   @override
@@ -1357,6 +1423,14 @@ class _DetailPane extends StatelessWidget {
                 ),
               ),
             ),
+            if (onToggleHistory != null)
+              IconButton(
+                tooltip: showHistory ? 'Close history' : 'Entry history',
+                onPressed: onToggleHistory,
+                icon: Icon(
+                  showHistory ? Icons.history_toggle_off : Icons.history,
+                ),
+              ),
             IconButton(
               tooltip: 'Edit entry',
               onPressed: onEdit,
@@ -1369,6 +1443,36 @@ class _DetailPane extends StatelessWidget {
             ),
           ],
         ),
+        if (showHistory) ...[
+          const SizedBox(height: 8),
+          if (loadingHistory)
+            const Center(child: CircularProgressIndicator())
+          else if (history == null || history!.isEmpty)
+            Text(
+              'No history entries',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            )
+          else
+            for (final item in history!)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.history),
+                title: Text(
+                  item.title ?? 'Untitled snapshot',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  item.lastModified ?? '',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onViewHistoryDetail != null
+                    ? () => onViewHistoryDetail!(item)
+                    : null,
+              ),
+          const SizedBox(height: 8),
+        ],
         const SizedBox(height: 20),
         _buildCopyField(
           context: context,
@@ -1459,10 +1563,8 @@ class _DetailPane extends StatelessWidget {
                   if (onRemoveAttachment != null && selectedEntry != null)
                     IconButton(
                       tooltip: 'Remove ${attachment.name}',
-                      onPressed: () => onRemoveAttachment!(
-                        selectedEntry!,
-                        attachment.name,
-                      ),
+                      onPressed: () =>
+                          onRemoveAttachment!(selectedEntry!, attachment.name),
                       icon: Icon(
                         Icons.delete_outline,
                         size: 18,
@@ -1525,10 +1627,8 @@ class _DetailPane extends StatelessWidget {
             if (onGeneratePassword != null)
               IconButton(
                 tooltip: 'Generate password',
-                onPressed:
-                    () => onGeneratePassword!(
-                      (pw) => passwordCtrl.text = pw,
-                    ),
+                onPressed: () =>
+                    onGeneratePassword!((pw) => passwordCtrl.text = pw),
                 icon: const Icon(Icons.password_outlined),
               ),
           ],
@@ -1551,9 +1651,9 @@ class _DetailPane extends StatelessWidget {
             children: [
               Text(
                 'Custom fields',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
               const Spacer(),
               if (onAddCustomField != null)

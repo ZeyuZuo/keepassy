@@ -259,9 +259,7 @@ class MockVaultRepository implements VaultRepository {
     required String entryId,
     required String name,
   }) async {
-    return Uint8List.fromList(
-      utf8.encode('mock attachment content for $name'),
-    );
+    return Uint8List.fromList(utf8.encode('mock attachment content for $name'));
   }
 
   @override
@@ -311,8 +309,9 @@ class MockVaultRepository implements VaultRepository {
     if (existing == null) {
       throw VaultRepositoryException('Entry not found: $entryId');
     }
-    final newAttachments =
-        existing.attachments.where((a) => a.name != name).toList();
+    final newAttachments = existing.attachments
+        .where((a) => a.name != name)
+        .toList();
     final updated = EntryDetail(
       id: existing.id,
       title: existing.title,
