@@ -713,6 +713,7 @@ class _GroupButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final entryLabel = group.entryCount == 1 ? 'entry' : 'entries';
 
     return Material(
       color: selected
@@ -744,7 +745,7 @@ class _GroupButton extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     Text(
-                      '${group.entryCount} entries',
+                      '${group.entryCount} $entryLabel',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),

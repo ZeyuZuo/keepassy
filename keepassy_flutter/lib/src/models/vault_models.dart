@@ -75,9 +75,11 @@ class GroupNode {
     }
   }
 
-  int get entryCount {
+  int get entryCount => entries.length;
+
+  int get totalEntryCount {
     return entries.length +
-        groups.fold<int>(0, (total, group) => total + group.entryCount);
+        groups.fold<int>(0, (total, group) => total + group.totalEntryCount);
   }
 }
 
