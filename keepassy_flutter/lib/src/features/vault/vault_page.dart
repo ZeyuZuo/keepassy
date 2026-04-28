@@ -40,6 +40,9 @@ class _VaultPageState extends State<VaultPage> {
   bool _showHistory = false;
   List<HistorySummary>? _history;
   bool _loadingHistory = false;
+  bool _searchAllGroups = false;
+  Timer? _autoLockTimer;
+  Timer? _inactivityTimer;
 
   // Edit form controllers
   final _editTitleController = TextEditingController();
@@ -54,10 +57,34 @@ class _VaultPageState extends State<VaultPage> {
     if (_selectedGroup.entries.isNotEmpty) {
       _selectEntry(_selectedGroup.entries.first);
     }
+    _resetInactivityTimer();
+  }
+
+  void _resetInactivityTimer() {
+    _inactivityTimer?.cancel();
+    _inactivityTimer = Timer(const Duration(minutes: 5), _autoLock);
+  }
+
+  void _autoLock() {
+    if (!mounted) return;
+    if (_dirty) {
+      // If dirty, just reset the timer rather than auto-lock losing changes.
+      _resetInactivityTimer();
+      return;
+    }
+    widget.repository.close();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => UnlockPage(repository: widget.repository),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _autoLockTimer?.cancel();
+    _inactivityTimer?.cancel();
     _editTitleController.dispose();
     _editUsernameController.dispose();
     _editPasswordController.dispose();
@@ -800,6 +827,206 @@ class _VaultPageState extends State<VaultPage> {
     });
   }
 
+  Future<void> _createGroupDialog() async {
+    final ctrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New group'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(labelText: 'Group name'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (name == null || name.isEmpty) return;
+    try {
+      await widget.repository.createGroup(
+        parentId: _selectedGroup.id,
+        name: name,
+      );
+      if (!mounted) return;
+      setState(() => _dirty = true);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => VaultPage(
+            repository: widget.repository,
+            initialVault: widget.initialVault,
+            keyfilePath: widget.keyfilePath,
+          ),
+        ),
+      );
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
+  Future<void> _renameGroupDialog(GroupNode group) async {
+    final ctrl = TextEditingController(text: group.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename group'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(labelText: 'Group name'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (name == null || name.isEmpty || name == group.name) return;
+    try {
+      await widget.repository.renameGroup(groupId: group.id, name: name);
+      if (!mounted) return;
+      setState(() => _dirty = true);
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => VaultPage(
+            repository: widget.repository,
+            initialVault: widget.initialVault,
+            keyfilePath: widget.keyfilePath,
+          ),
+        ),
+      );
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
+  Future<void> _deleteGroupDialog(GroupNode group) async {
+    if (group.groups.isNotEmpty || group.entries.isNotEmpty) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Delete "${group.name}"?'),
+          content: Text(
+            'This group contains ${group.totalEntryCount} entries and ${group.groups.length} subgroups.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+    try {
+      await widget.repository.deleteGroup(group.id);
+      if (!mounted) return;
+      setState(() => _dirty = true);
+      _selectedGroup = widget.initialVault.groupTree;
+      _selectedEntry = null;
+      _detail = null;
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
+  Future<void> _moveEntryDialog() async {
+    final entry = _selectedEntry;
+    if (entry == null) return;
+    final groups = widget.initialVault.groupTree.flatten().toList();
+    final target = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Move to group'),
+        children: [
+          for (final g in groups)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, g.id),
+              child: Text(
+                g.name,
+                style: TextStyle(
+                  fontWeight: g.id == _selectedGroup.id
+                      ? FontWeight.bold
+                      : null,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (target == null || target == _selectedGroup.id) return;
+    try {
+      await widget.repository.moveEntry(entry.id, target);
+      if (!mounted) return;
+      setState(() => _dirty = true);
+      _refreshGroup(_selectedGroup.id);
+      _refreshGroup(target);
+      _selectedEntry = null;
+      _detail = null;
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
+  Future<void> _duplicateEntry() async {
+    final detail = _detail;
+    if (detail == null) return;
+    try {
+      await widget.repository.createEntry(
+        CreateEntryRequest(
+          groupId: _selectedGroup.id,
+          title: '${detail.title ?? 'Untitled'} (copy)',
+          username: detail.username,
+          password: detail.password,
+          url: detail.url,
+          notes: detail.notes,
+          customFields: detail.fields,
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _dirty = true);
+      _refreshGroup(_selectedGroup.id);
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
   void _showCreateDialog() {
     final titleCtrl = TextEditingController();
     final usernameCtrl = TextEditingController();
@@ -1002,16 +1229,21 @@ class _VaultPageState extends State<VaultPage> {
 
   @override
   Widget build(BuildContext context) {
-    final entries = _selectedGroup.entries
-        .where((entry) {
-          final haystack = [
-            entry.title,
-            entry.username,
-            entry.url,
-          ].whereType<String>().join(' ').toLowerCase();
-          return haystack.contains(_query.toLowerCase());
-        })
-        .toList(growable: false);
+    // Reset inactivity timer on build (user interaction)
+    _resetInactivityTimer();
+
+    final searchGroups = _searchAllGroups
+        ? widget.initialVault.groupTree.flatten().toList()
+        : [_selectedGroup];
+    final entries = searchGroups.expand((g) => g.entries).where((entry) {
+      if (_query.isEmpty) return true;
+      final haystack = [
+        entry.title,
+        entry.username,
+        entry.url,
+      ].whereType<String>().join(' ').toLowerCase();
+      return haystack.contains(_query.toLowerCase());
+    }).toList()..sort((a, b) => (a.displayTitle).compareTo(b.displayTitle));
 
     return Scaffold(
       appBar: AppBar(
@@ -1066,6 +1298,9 @@ class _VaultPageState extends State<VaultPage> {
                     selectedGroup: _selectedGroup,
                     horizontal: true,
                     onSelected: _selectGroup,
+                    onCreateGroup: _createGroupDialog,
+                    onRenameGroup: _renameGroupDialog,
+                    onDeleteGroup: _deleteGroupDialog,
                   ),
                 ),
                 const Divider(),
@@ -1132,6 +1367,9 @@ class _VaultPageState extends State<VaultPage> {
                   query: _query,
                   onQueryChanged: (value) => setState(() => _query = value),
                   onSelected: _selectEntry,
+                  searchAllGroups: _searchAllGroups,
+                  onSearchAllGroupsChanged: (v) =>
+                      setState(() => _searchAllGroups = v),
                 ),
               ),
               const VerticalDivider(width: 1),
@@ -1162,6 +1400,8 @@ class _VaultPageState extends State<VaultPage> {
                   onToggleCustomFieldProtect: _toggleCustomFieldProtect,
                   onToggleHistory: _loadHistory,
                   onViewHistoryDetail: _viewHistoryDetail,
+                  onMoveEntry: _moveEntryDialog,
+                  onDuplicateEntry: _duplicateEntry,
                   showHistory: _showHistory,
                   history: _history,
                   loadingHistory: _loadingHistory,
@@ -1234,47 +1474,96 @@ class _GroupRail extends StatelessWidget {
     required this.selectedGroup,
     required this.onSelected,
     this.horizontal = false,
+    this.onCreateGroup,
+    this.onRenameGroup,
+    this.onDeleteGroup,
   });
 
   final GroupNode root;
   final GroupNode selectedGroup;
   final ValueChanged<GroupNode> onSelected;
   final bool horizontal;
+  final VoidCallback? onCreateGroup;
+  final void Function(GroupNode)? onRenameGroup;
+  final void Function(GroupNode)? onDeleteGroup;
 
   @override
   Widget build(BuildContext context) {
     final groups = root.flatten().toList(growable: false);
 
-    if (horizontal) {
-      return ListView.separated(
-        padding: const EdgeInsets.all(16),
-        scrollDirection: Axis.horizontal,
-        itemCount: groups.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          return SizedBox(
-            width: 180,
-            child: _GroupButton(
-              group: groups[index],
-              selected: groups[index].id == selectedGroup.id,
-              onSelected: onSelected,
+    Widget header;
+    if (onCreateGroup != null && !horizontal) {
+      header = Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
+        child: Row(
+          children: [
+            Text(
+              'Groups',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
             ),
-          );
-        },
+            const Spacer(),
+            IconButton(
+              tooltip: 'New group',
+              onPressed: onCreateGroup,
+              icon: const Icon(Icons.add, size: 18),
+            ),
+          ],
+        ),
+      );
+    } else {
+      header = const SizedBox.shrink();
+    }
+
+    if (horizontal) {
+      return Column(
+        children: [
+          header,
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.all(16),
+              scrollDirection: Axis.horizontal,
+              itemCount: groups.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                return SizedBox(
+                  width: 180,
+                  child: _GroupButton(
+                    group: groups[index],
+                    selected: groups[index].id == selectedGroup.id,
+                    onSelected: onSelected,
+                    onRename: onRenameGroup,
+                    onDelete: onDeleteGroup,
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: groups.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 6),
-      itemBuilder: (context, index) {
-        return _GroupButton(
-          group: groups[index],
-          selected: groups[index].id == selectedGroup.id,
-          onSelected: onSelected,
-        );
-      },
+    return Column(
+      children: [
+        header,
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            itemCount: groups.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 6),
+            itemBuilder: (context, index) {
+              return _GroupButton(
+                group: groups[index],
+                selected: groups[index].id == selectedGroup.id,
+                onSelected: onSelected,
+                onRename: onRenameGroup,
+                onDelete: onDeleteGroup,
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1284,11 +1573,15 @@ class _GroupButton extends StatelessWidget {
     required this.group,
     required this.selected,
     required this.onSelected,
+    this.onRename,
+    this.onDelete,
   });
 
   final GroupNode group;
   final bool selected;
   final ValueChanged<GroupNode> onSelected;
+  final void Function(GroupNode)? onRename;
+  final void Function(GroupNode)? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -1333,6 +1626,29 @@ class _GroupButton extends StatelessWidget {
                   ],
                 ),
               ),
+              if (group.id != 'root' && onRename != null && onDelete != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: () => onRename!(group),
+                      child: Icon(
+                        Icons.edit,
+                        size: 14,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: () => onDelete!(group),
+                      child: Icon(
+                        Icons.delete_outline,
+                        size: 14,
+                        color: colorScheme.error,
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),
@@ -1349,6 +1665,8 @@ class _EntryList extends StatelessWidget {
     required this.query,
     required this.onQueryChanged,
     required this.onSelected,
+    this.searchAllGroups = false,
+    this.onSearchAllGroupsChanged,
   });
 
   final GroupNode group;
@@ -1357,6 +1675,8 @@ class _EntryList extends StatelessWidget {
   final String query;
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<EntrySummary> onSelected;
+  final bool searchAllGroups;
+  final ValueChanged<bool>? onSearchAllGroupsChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1368,18 +1688,56 @@ class _EntryList extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                group.name,
+                searchAllGroups ? 'All entries' : group.name,
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                onChanged: onQueryChanged,
-                decoration: const InputDecoration(
-                  hintText: 'Search entries',
-                  prefixIcon: Icon(Icons.search),
-                ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      onChanged: onQueryChanged,
+                      decoration: const InputDecoration(
+                        hintText: 'Search entries',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                    ),
+                  ),
+                  if (onSearchAllGroupsChanged != null) ...[
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () => onSearchAllGroupsChanged!(!searchAllGroups),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                          color: searchAllGroups
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.1)
+                              : null,
+                        ),
+                        child: Text(
+                          'All',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: searchAllGroups
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
@@ -1496,6 +1854,8 @@ class _DetailPane extends StatelessWidget {
     this.onToggleCustomFieldProtect,
     this.onToggleHistory,
     this.onViewHistoryDetail,
+    this.onMoveEntry,
+    this.onDuplicateEntry,
     this.showHistory = false,
     this.history,
     this.loadingHistory = false,
@@ -1525,6 +1885,8 @@ class _DetailPane extends StatelessWidget {
   final void Function(String, String, bool)? onToggleCustomFieldProtect;
   final VoidCallback? onToggleHistory;
   final void Function(HistorySummary)? onViewHistoryDetail;
+  final VoidCallback? onMoveEntry;
+  final VoidCallback? onDuplicateEntry;
   final bool showHistory;
   final List<HistorySummary>? history;
   final bool loadingHistory;
@@ -1562,6 +1924,18 @@ class _DetailPane extends StatelessWidget {
                 ),
               ),
             ),
+            if (onMoveEntry != null)
+              IconButton(
+                tooltip: 'Move to group',
+                onPressed: onMoveEntry,
+                icon: const Icon(Icons.drive_file_move_outlined),
+              ),
+            if (onDuplicateEntry != null)
+              IconButton(
+                tooltip: 'Duplicate entry',
+                onPressed: onDuplicateEntry,
+                icon: const Icon(Icons.copy),
+              ),
             if (onToggleHistory != null)
               IconButton(
                 tooltip: showHistory ? 'Close history' : 'Entry history',
