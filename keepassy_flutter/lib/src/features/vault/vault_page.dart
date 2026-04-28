@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -305,6 +308,368 @@ class _VaultPageState extends State<VaultPage> {
     }
   }
 
+  void _showPasswordGenerator(void Function(String) onAccept) {
+    final lengthCtrl = TextEditingController(text: '20');
+    bool lowercase = true, uppercase = true, digits = true, symbols = true;
+    bool avoidAmbiguous = false;
+
+    showDialog<void>(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder: (context, setState) {
+              String generated = _generatePassword(
+                int.tryParse(lengthCtrl.text) ?? 20,
+                lowercase: lowercase,
+                uppercase: uppercase,
+                digits: digits,
+                symbols: symbols,
+                avoidAmbiguous: avoidAmbiguous,
+              );
+
+              return AlertDialog(
+                title: const Text('Password generator'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          const Text('Length:'),
+                          const SizedBox(width: 12),
+                          SizedBox(
+                            width: 80,
+                            child: TextField(
+                              controller: lengthCtrl,
+                              keyboardType: TextInputType.number,
+                              onChanged:
+                                  (_) => setState(
+                                    () => generated = _generatePassword(
+                                      int.tryParse(lengthCtrl.text) ?? 20,
+                                      lowercase: lowercase,
+                                      uppercase: uppercase,
+                                      digits: digits,
+                                      symbols: symbols,
+                                      avoidAmbiguous: avoidAmbiguous,
+                                    ),
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      CheckboxListTile(
+                        title: const Text('Lowercase (a–z)'),
+                        value: lowercase,
+                        onChanged:
+                            (v) => setState(() => lowercase = v ?? true),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      CheckboxListTile(
+                        title: const Text('Uppercase (A–Z)'),
+                        value: uppercase,
+                        onChanged:
+                            (v) => setState(() => uppercase = v ?? true),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      CheckboxListTile(
+                        title: const Text('Digits (0–9)'),
+                        value: digits,
+                        onChanged:
+                            (v) => setState(() => digits = v ?? true),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      CheckboxListTile(
+                        title: const Text('Symbols (!@#…)'),
+                        value: symbols,
+                        onChanged:
+                            (v) => setState(() => symbols = v ?? true),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      CheckboxListTile(
+                        title: const Text('Avoid ambiguous (Il1O0)'),
+                        value: avoidAmbiguous,
+                        onChanged:
+                            (v) =>
+                                setState(() => avoidAmbiguous = v ?? false),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: SelectableText(
+                          generated,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      onAccept(generated);
+                    },
+                    child: const Text('Use password'),
+                  ),
+                ],
+              );
+            },
+          ),
+    );
+  }
+
+  String _generatePassword(
+    int length, {
+    required bool lowercase,
+    required bool uppercase,
+    required bool digits,
+    required bool symbols,
+    required bool avoidAmbiguous,
+  }) {
+    const lower = 'abcdefghijklmnopqrstuvwxyz';
+    const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const digit = '0123456789';
+    const sym = '!@#\$%^&*()_+-=[]{}|;:,.<>?';
+    const ambiguous = 'Il1O0';
+
+    var pool = '';
+    if (lowercase) pool += lower;
+    if (uppercase) pool += upper;
+    if (digits) pool += digit;
+    if (symbols) pool += sym;
+    if (pool.isEmpty) return '';
+
+    if (avoidAmbiguous) {
+      pool = pool
+          .split('')
+          .where((c) => !ambiguous.contains(c))
+          .join('');
+    }
+
+    final rand = Random.secure();
+    return List.generate(length, (_) => pool[rand.nextInt(pool.length)]).join();
+  }
+
+  Future<void> _downloadAttachment(EntrySummary entry, String name) async {
+    try {
+      final result = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save $name',
+        fileName: name,
+      );
+      if (result == null) return;
+
+      final bytes = await widget.repository.attachmentBytes(
+        entryId: entry.id,
+        name: name,
+      );
+      await File(result).writeAsBytes(bytes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Saved $name')),
+      );
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Download failed: $err')));
+    }
+  }
+
+  Future<void> _addAttachment(EntrySummary entry) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        withData: true,
+        dialogTitle: 'Add attachment to ${entry.displayTitle}',
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = result.files.first;
+      if (file.bytes == null) return;
+
+      await widget.repository.upsertAttachment(
+        entryId: entry.id,
+        name: file.name,
+        bytes: Uint8List.fromList(file.bytes!),
+        protect: false,
+      );
+      if (!mounted) return;
+      _selectEntry(entry);
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Add attachment failed: $err')));
+    }
+  }
+
+  Future<void> _removeAttachment(EntrySummary entry, String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Remove attachment'),
+            content: Text('Remove "$name"?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Remove'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await widget.repository.removeAttachment(
+        entryId: entry.id,
+        name: name,
+      );
+      if (!mounted) return;
+      _selectEntry(entry);
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Remove failed: $err')));
+    }
+  }
+
+  // --- Custom field helpers ---
+
+  Future<void> _addCustomField() async {
+    final keyCtrl = TextEditingController();
+    final valueCtrl = TextEditingController();
+    bool protect = false;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => StatefulBuilder(
+            builder: (context, setState) => AlertDialog(
+              title: const Text('Add custom field'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: keyCtrl,
+                    decoration: const InputDecoration(labelText: 'Field name'),
+                    autofocus: true,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: valueCtrl,
+                    decoration: const InputDecoration(labelText: 'Value'),
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    title: const Text('Protected'),
+                    value: protect,
+                    onChanged: (v) => setState(() => protect = v ?? false),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Add'),
+                ),
+              ],
+            ),
+          ),
+    );
+
+    if (confirmed != true) return;
+    final key = keyCtrl.text.trim();
+    final value = valueCtrl.text;
+    keyCtrl.dispose();
+    valueCtrl.dispose();
+    if (key.isEmpty) return;
+
+    final entryId = _selectedEntry?.id;
+    if (entryId == null) return;
+
+    try {
+      final updated = await widget.repository.setCustomField(
+        entryId: entryId,
+        key: key,
+        value: value,
+        protect: protect,
+      );
+      if (!mounted) return;
+      setState(() {
+        _detail = updated;
+        _editing = true;
+      });
+      _editTitleController.text = updated.title ?? '';
+      _editUsernameController.text = updated.username ?? '';
+      _editPasswordController.text = updated.password ?? '';
+      _editUrlController.text = updated.url ?? '';
+      _editNotesController.text = updated.notes ?? '';
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
+  Future<void> _removeCustomField(String key) async {
+    final entryId = _selectedEntry?.id;
+    if (entryId == null) return;
+
+    try {
+      final updated = await widget.repository.deleteCustomField(
+        entryId: entryId,
+        key: key,
+      );
+      if (!mounted) return;
+      setState(() {
+        _detail = updated;
+        _editing = true;
+      });
+      _editTitleController.text = updated.title ?? '';
+      _editUsernameController.text = updated.username ?? '';
+      _editPasswordController.text = updated.password ?? '';
+      _editUrlController.text = updated.url ?? '';
+      _editNotesController.text = updated.notes ?? '';
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
   Future<void> _lock() async {
     if (_dirty) {
       final confirmed = await showDialog<bool>(
@@ -390,11 +755,26 @@ class _VaultPageState extends State<VaultPage> {
                     textInputAction: TextInputAction.next,
                   ),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: passwordCtrl,
-                    decoration: const InputDecoration(labelText: 'Password'),
-                    obscureText: true,
-                    textInputAction: TextInputAction.next,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: passwordCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Password',
+                          ),
+                          obscureText: true,
+                          textInputAction: TextInputAction.next,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Generate password',
+                        onPressed: () => _showPasswordGenerator(
+                          (pw) => passwordCtrl.text = pw,
+                        ),
+                        icon: const Icon(Icons.password_outlined),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -539,6 +919,13 @@ class _VaultPageState extends State<VaultPage> {
                     onSaveEdit: _saveEdit,
                     onCancelEdit: _cancelEdit,
                     onDelete: _deleteEntry,
+                    onGeneratePassword: _showPasswordGenerator,
+                    onDownloadAttachment: _downloadAttachment,
+                    onAddAttachment: _addAttachment,
+                    onRemoveAttachment: _removeAttachment,
+                    onAddCustomField: _addCustomField,
+                    onRemoveCustomField: _removeCustomField,
+                    selectedEntry: _selectedEntry,
                   ),
                 ),
               ],
@@ -907,6 +1294,13 @@ class _DetailPane extends StatelessWidget {
     required this.onSaveEdit,
     required this.onCancelEdit,
     required this.onDelete,
+    this.onGeneratePassword,
+    this.onDownloadAttachment,
+    this.onAddAttachment,
+    this.onRemoveAttachment,
+    this.onAddCustomField,
+    this.onRemoveCustomField,
+    this.selectedEntry,
   });
 
   final EntryDetail? detail;
@@ -923,6 +1317,13 @@ class _DetailPane extends StatelessWidget {
   final VoidCallback onSaveEdit;
   final VoidCallback onCancelEdit;
   final VoidCallback onDelete;
+  final void Function(void Function(String))? onGeneratePassword;
+  final void Function(EntrySummary, String)? onDownloadAttachment;
+  final void Function(EntrySummary)? onAddAttachment;
+  final void Function(EntrySummary, String)? onRemoveAttachment;
+  final void Function()? onAddCustomField;
+  final void Function(String)? onRemoveCustomField;
+  final EntrySummary? selectedEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -1009,15 +1410,33 @@ class _DetailPane extends StatelessWidget {
               value: item.value,
             ),
         ],
-        if (detail.attachments.isNotEmpty) ...[
-          const SizedBox(height: 18),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Text(
+              'Attachments',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const Spacer(),
+            if (onAddAttachment != null && selectedEntry != null)
+              IconButton(
+                tooltip: 'Add attachment',
+                onPressed: () => onAddAttachment!(selectedEntry!),
+                icon: const Icon(Icons.add, size: 20),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (detail.attachments.isEmpty)
           Text(
-            'Attachments',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
+            'No attachments',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          )
+        else
           for (final attachment in detail.attachments)
             _FieldLine(
               icon: attachment.protected
@@ -1025,8 +1444,34 @@ class _DetailPane extends StatelessWidget {
                   : Icons.attach_file_outlined,
               label: attachment.name,
               value: '${attachment.size} bytes',
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (onDownloadAttachment != null && selectedEntry != null)
+                    IconButton(
+                      tooltip: 'Download ${attachment.name}',
+                      onPressed: () => onDownloadAttachment!(
+                        selectedEntry!,
+                        attachment.name,
+                      ),
+                      icon: const Icon(Icons.download, size: 18),
+                    ),
+                  if (onRemoveAttachment != null && selectedEntry != null)
+                    IconButton(
+                      tooltip: 'Remove ${attachment.name}',
+                      onPressed: () => onRemoveAttachment!(
+                        selectedEntry!,
+                        attachment.name,
+                      ),
+                      icon: Icon(
+                        Icons.delete_outline,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                ],
+              ),
             ),
-        ],
       ],
     );
   }
@@ -1068,10 +1513,25 @@ class _DetailPane extends StatelessWidget {
           decoration: const InputDecoration(labelText: 'Username'),
         ),
         const SizedBox(height: 14),
-        TextField(
-          controller: passwordCtrl,
-          decoration: const InputDecoration(labelText: 'Password'),
-          obscureText: true,
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: passwordCtrl,
+                decoration: const InputDecoration(labelText: 'Password'),
+                obscureText: true,
+              ),
+            ),
+            if (onGeneratePassword != null)
+              IconButton(
+                tooltip: 'Generate password',
+                onPressed:
+                    () => onGeneratePassword!(
+                      (pw) => passwordCtrl.text = pw,
+                    ),
+                icon: const Icon(Icons.password_outlined),
+              ),
+          ],
         ),
         const SizedBox(height: 14),
         TextField(
@@ -1084,6 +1544,57 @@ class _DetailPane extends StatelessWidget {
           decoration: const InputDecoration(labelText: 'Notes'),
           maxLines: 3,
         ),
+        // Custom fields
+        if (detail != null) ...[
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Text(
+                'Custom fields',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              if (onAddCustomField != null)
+                IconButton(
+                  tooltip: 'Add custom field',
+                  onPressed: onAddCustomField,
+                  icon: const Icon(Icons.add, size: 20),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (detail!.fields.isEmpty)
+            Text(
+              'No custom fields',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            )
+          else
+            for (final entry in detail!.readonlyFields.entries)
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: TextEditingController(text: entry.value),
+                      decoration: InputDecoration(labelText: entry.key),
+                      enabled: false,
+                    ),
+                  ),
+                  if (onRemoveCustomField != null)
+                    IconButton(
+                      tooltip: 'Remove ${entry.key}',
+                      onPressed: () => onRemoveCustomField!(entry.key),
+                      icon: Icon(
+                        Icons.delete_outline,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                ],
+              ),
+        ],
       ],
     );
   }

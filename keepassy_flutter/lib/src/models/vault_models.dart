@@ -233,3 +233,29 @@ class UpdateEntryRequest {
     'notes': notes,
   };
 }
+
+class HistorySummary {
+  const HistorySummary({
+    required this.index,
+    this.title,
+    this.username,
+    this.url,
+    this.lastModified,
+  });
+
+  final int index;
+  final String? title;
+  final String? username;
+  final String? url;
+  final String? lastModified;
+
+  factory HistorySummary.fromJson(Map<String, Object?> json) {
+    return HistorySummary(
+      index: json['index'] as int? ?? 0,
+      title: json['title'] as String?,
+      username: json['username'] as String?,
+      url: json['url'] as String?,
+      lastModified: json['last_modified'] as String?,
+    );
+  }
+}

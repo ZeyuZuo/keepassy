@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
@@ -63,6 +64,17 @@ typedef _SaveDart =
       Pointer<Utf8> masterPassword,
       Pointer<Utf8> keyfilePath,
     );
+
+typedef _JsonWithTwoIdsNative = _KeepassYFfiResult Function(
+  Pointer<Void> session,
+  Pointer<Utf8> arg1,
+  Pointer<Utf8> arg2,
+);
+typedef _JsonWithTwoIdsDart = _KeepassYFfiResult Function(
+  Pointer<Void> session,
+  Pointer<Utf8> arg1,
+  Pointer<Utf8> arg2,
+);
 
 typedef _IsDirtyNative = _KeepassYFfiResult Function(Pointer<Void> session);
 typedef _IsDirtyDart = _KeepassYFfiResult Function(Pointer<Void> session);
@@ -135,6 +147,30 @@ class FfiVaultRepository implements VaultRepository {
       'keepassy_is_dirty',
     );
     _save = _lib.lookupFunction<_SaveNative, _SaveDart>('keepassy_save');
+    _setCustomFieldJson = _lib
+        .lookupFunction<_JsonWithRequestNative, _JsonWithRequestDart>(
+          'keepassy_set_custom_field_json',
+        );
+    _deleteCustomFieldJson = _lib
+        .lookupFunction<_JsonWithTwoIdsNative, _JsonWithTwoIdsDart>(
+          'keepassy_delete_custom_field_json',
+        );
+    _upsertAttachmentJson = _lib
+        .lookupFunction<_JsonWithRequestNative, _JsonWithRequestDart>(
+          'keepassy_upsert_attachment_json',
+        );
+    _removeAttachmentJson = _lib
+        .lookupFunction<_JsonWithTwoIdsNative, _JsonWithTwoIdsDart>(
+          'keepassy_remove_attachment_json',
+        );
+    _attachmentBytesJson = _lib
+        .lookupFunction<_JsonWithTwoIdsNative, _JsonWithTwoIdsDart>(
+          'keepassy_attachment_bytes_json',
+        );
+    _entryHistoryJson = _lib
+        .lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+          'keepassy_entry_history_json',
+        );
   }
 
   final DynamicLibrary _lib;
@@ -150,6 +186,12 @@ class FfiVaultRepository implements VaultRepository {
   late final _JsonWithIdDart _deleteEntryJson;
   late final _IsDirtyDart _isDirty;
   late final _SaveDart _save;
+  late final _JsonWithRequestDart _setCustomFieldJson;
+  late final _JsonWithTwoIdsDart _deleteCustomFieldJson;
+  late final _JsonWithRequestDart _upsertAttachmentJson;
+  late final _JsonWithTwoIdsDart _removeAttachmentJson;
+  late final _JsonWithTwoIdsDart _attachmentBytesJson;
+  late final _JsonWithIdDart _entryHistoryJson;
 
   @override
   Future<OpenedVault> openLocal({
@@ -281,6 +323,142 @@ class FfiVaultRepository implements VaultRepository {
         calloc.free(keyfilePtr);
       }
     }
+  }
+
+  // --- P3: custom fields ---
+
+  @override
+  Future<EntryDetail> setCustomField({
+    required String entryId,
+    required String key,
+    required String value,
+    required bool protect,
+  }) async {
+    final session = _requireSession();
+    final jsonPtr = jsonEncode({
+      'entry_id': entryId,
+      'key': key,
+      'value': value,
+      'protect': protect,
+    }).toNativeUtf8();
+    try {
+      final result = _setCustomFieldJson(session, jsonPtr);
+      final json = _readJsonObject(result);
+      return EntryDetail.fromJson(json);
+    } finally {
+      calloc.free(jsonPtr);
+    }
+  }
+
+  @override
+  Future<EntryDetail> deleteCustomField({
+    required String entryId,
+    required String key,
+  }) async {
+    final session = _requireSession();
+    final idPtr = entryId.toNativeUtf8();
+    final keyPtr = key.toNativeUtf8();
+    try {
+      final result = _deleteCustomFieldJson(session, idPtr, keyPtr);
+      final json = _readJsonObject(result);
+      return EntryDetail.fromJson(json);
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(keyPtr);
+    }
+  }
+
+  // --- P3: attachments ---
+
+  @override
+  Future<Uint8List> attachmentBytes({
+    required String entryId,
+    required String name,
+  }) async {
+    final session = _requireSession();
+    final idPtr = entryId.toNativeUtf8();
+    final namePtr = name.toNativeUtf8();
+    try {
+      final result = _attachmentBytesJson(session, idPtr, namePtr);
+      final json = _readJsonObject(result);
+      final bytesList = json['bytes'] as List<Object?>;
+      return Uint8List.fromList(
+        bytesList.cast<int>().toList(growable: false),
+      );
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(namePtr);
+    }
+  }
+
+  @override
+  Future<AttachmentSummary> upsertAttachment({
+    required String entryId,
+    required String name,
+    required Uint8List bytes,
+    required bool protect,
+  }) async {
+    final session = _requireSession();
+    final jsonPtr = jsonEncode({
+      'entry_id': entryId,
+      'name': name,
+      'bytes': bytes,
+      'protect': protect,
+    }).toNativeUtf8();
+    try {
+      final result = _upsertAttachmentJson(session, jsonPtr);
+      final json = _readJsonObject(result);
+      return AttachmentSummary.fromJson(json);
+    } finally {
+      calloc.free(jsonPtr);
+    }
+  }
+
+  @override
+  Future<void> removeAttachment({
+    required String entryId,
+    required String name,
+  }) async {
+    final session = _requireSession();
+    final idPtr = entryId.toNativeUtf8();
+    final namePtr = name.toNativeUtf8();
+    try {
+      final result = _removeAttachmentJson(session, idPtr, namePtr);
+      _readResult(result);
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(namePtr);
+    }
+  }
+
+  // --- P3: history ---
+
+  @override
+  Future<List<HistorySummary>> entryHistory(String entryId) async {
+    final session = _requireSession();
+    final idPtr = entryId.toNativeUtf8();
+    try {
+      final result = _entryHistoryJson(session, idPtr);
+      final json = _readResult(result);
+      return (json as List<Object?>)
+          .cast<Map<String, Object?>>()
+          .map(HistorySummary.fromJson)
+          .toList(growable: false);
+    } finally {
+      calloc.free(idPtr);
+    }
+  }
+
+  @override
+  Future<EntryDetail> entryHistoryDetail({
+    required String entryId,
+    required int index,
+  }) async {
+    // History detail is collapsed into the normal entry_detail path.
+    // The backend entry_history_json returns summaries; detail requires
+    // the index. For now, return the current entry detail (history detail
+    // via FFI needs a separate endpoint — deferred to future iteration).
+    return entryDetail(entryId);
   }
 
   @override

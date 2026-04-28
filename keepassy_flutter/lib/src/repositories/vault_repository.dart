@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import '../models/vault_models.dart';
 
@@ -24,6 +26,48 @@ abstract class VaultRepository {
   Future<void> save({required String masterPassword, String? keyfilePath});
 
   Future<void> close();
+
+  // --- P3: custom fields ---
+
+  Future<EntryDetail> setCustomField({
+    required String entryId,
+    required String key,
+    required String value,
+    required bool protect,
+  });
+
+  Future<EntryDetail> deleteCustomField({
+    required String entryId,
+    required String key,
+  });
+
+  // --- P3: attachments ---
+
+  Future<Uint8List> attachmentBytes({
+    required String entryId,
+    required String name,
+  });
+
+  Future<AttachmentSummary> upsertAttachment({
+    required String entryId,
+    required String name,
+    required Uint8List bytes,
+    required bool protect,
+  });
+
+  Future<void> removeAttachment({
+    required String entryId,
+    required String name,
+  });
+
+  // --- P3: history ---
+
+  Future<List<HistorySummary>> entryHistory(String entryId);
+
+  Future<EntryDetail> entryHistoryDetail({
+    required String entryId,
+    required int index,
+  });
 }
 
 class MockVaultRepository implements VaultRepository {
@@ -150,6 +194,160 @@ class MockVaultRepository implements VaultRepository {
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 200));
     _dirty = false;
+  }
+
+  // --- P3: custom fields ---
+
+  @override
+  Future<EntryDetail> setCustomField({
+    required String entryId,
+    required String key,
+    required String value,
+    required bool protect,
+  }) async {
+    final existing = _details[entryId];
+    if (existing == null) {
+      throw VaultRepositoryException('Entry not found: $entryId');
+    }
+    final newFields = Map<String, String>.from(existing.fields);
+    newFields[key] = value;
+    final updated = EntryDetail(
+      id: existing.id,
+      title: existing.title,
+      username: existing.username,
+      password: existing.password,
+      url: existing.url,
+      notes: existing.notes,
+      fields: newFields,
+      attachments: existing.attachments,
+    );
+    _details[entryId] = updated;
+    _dirty = true;
+    return updated;
+  }
+
+  @override
+  Future<EntryDetail> deleteCustomField({
+    required String entryId,
+    required String key,
+  }) async {
+    final existing = _details[entryId];
+    if (existing == null) {
+      throw VaultRepositoryException('Entry not found: $entryId');
+    }
+    final newFields = Map<String, String>.from(existing.fields);
+    newFields.remove(key);
+    final updated = EntryDetail(
+      id: existing.id,
+      title: existing.title,
+      username: existing.username,
+      password: existing.password,
+      url: existing.url,
+      notes: existing.notes,
+      fields: newFields,
+      attachments: existing.attachments,
+    );
+    _details[entryId] = updated;
+    _dirty = true;
+    return updated;
+  }
+
+  // --- P3: attachments ---
+
+  @override
+  Future<Uint8List> attachmentBytes({
+    required String entryId,
+    required String name,
+  }) async {
+    return Uint8List.fromList(
+      utf8.encode('mock attachment content for $name'),
+    );
+  }
+
+  @override
+  Future<AttachmentSummary> upsertAttachment({
+    required String entryId,
+    required String name,
+    required Uint8List bytes,
+    required bool protect,
+  }) async {
+    final existing = _details[entryId];
+    if (existing == null) {
+      throw VaultRepositoryException('Entry not found: $entryId');
+    }
+    final summary = AttachmentSummary(
+      name: name,
+      size: bytes.length,
+      protected: protect,
+    );
+    final newAttachments = List<AttachmentSummary>.from(existing.attachments);
+    final idx = newAttachments.indexWhere((a) => a.name == name);
+    if (idx != -1) {
+      newAttachments[idx] = summary;
+    } else {
+      newAttachments.add(summary);
+    }
+    final updated = EntryDetail(
+      id: existing.id,
+      title: existing.title,
+      username: existing.username,
+      password: existing.password,
+      url: existing.url,
+      notes: existing.notes,
+      fields: existing.fields,
+      attachments: newAttachments,
+    );
+    _details[entryId] = updated;
+    _dirty = true;
+    return summary;
+  }
+
+  @override
+  Future<void> removeAttachment({
+    required String entryId,
+    required String name,
+  }) async {
+    final existing = _details[entryId];
+    if (existing == null) {
+      throw VaultRepositoryException('Entry not found: $entryId');
+    }
+    final newAttachments =
+        existing.attachments.where((a) => a.name != name).toList();
+    final updated = EntryDetail(
+      id: existing.id,
+      title: existing.title,
+      username: existing.username,
+      password: existing.password,
+      url: existing.url,
+      notes: existing.notes,
+      fields: existing.fields,
+      attachments: newAttachments,
+    );
+    _details[entryId] = updated;
+    _dirty = true;
+  }
+
+  // --- P3: history ---
+
+  @override
+  Future<List<HistorySummary>> entryHistory(String entryId) async {
+    return const [
+      HistorySummary(
+        index: 0,
+        title: 'Mock historical snapshot',
+        username: 'mock-user',
+        lastModified: '2026-04-28T12:00:00Z',
+      ),
+    ];
+  }
+
+  @override
+  Future<EntryDetail> entryHistoryDetail({
+    required String entryId,
+    required int index,
+  }) async {
+    return _details[entryId] ??
+        (throw VaultRepositoryException('Entry not found: $entryId'));
   }
 
   @override
