@@ -52,6 +52,21 @@ typedef _JsonWithRequestDart =
       Pointer<Utf8> requestJson,
     );
 
+typedef _ChangePasswordNative =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> oldPassword,
+      Pointer<Utf8> newPassword,
+      Pointer<Utf8> keyfilePath,
+    );
+typedef _ChangePasswordDart =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> oldPassword,
+      Pointer<Utf8> newPassword,
+      Pointer<Utf8> keyfilePath,
+    );
+
 typedef _SaveNative =
     _KeepassYFfiResult Function(
       Pointer<Void> session,
@@ -162,6 +177,10 @@ class FfiVaultRepository implements VaultRepository {
       'keepassy_is_dirty',
     );
     _save = _lib.lookupFunction<_SaveNative, _SaveDart>('keepassy_save');
+    _changePassword = _lib
+        .lookupFunction<_ChangePasswordNative, _ChangePasswordDart>(
+          'keepassy_change_password_json',
+        );
     _setCustomFieldJson = _lib
         .lookupFunction<_JsonWithRequestNative, _JsonWithRequestDart>(
           'keepassy_set_custom_field_json',
@@ -219,6 +238,7 @@ class FfiVaultRepository implements VaultRepository {
   late final _JsonWithIdDart _deleteEntryJson;
   late final _IsDirtyDart _isDirty;
   late final _SaveDart _save;
+  late final _ChangePasswordDart _changePassword;
   late final _JsonWithRequestDart _setCustomFieldJson;
   late final _JsonWithTwoIdsDart _deleteCustomFieldJson;
   late final _JsonWithRequestDart _upsertAttachmentJson;
@@ -563,6 +583,30 @@ class FfiVaultRepository implements VaultRepository {
       return EntryDetail.fromJson(json);
     } finally {
       calloc.free(jsonPtr);
+    }
+  }
+
+  // --- database ---
+
+  @override
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+    String? keyfilePath,
+  }) async {
+    final session = _requireSession();
+    final oldPtr = oldPassword.toNativeUtf8();
+    final newPtr = newPassword.toNativeUtf8();
+    final keyPtr = (keyfilePath != null && keyfilePath.trim().isNotEmpty)
+        ? keyfilePath.toNativeUtf8()
+        : nullptr;
+    try {
+      final result = _changePassword(session, oldPtr, newPtr, keyPtr);
+      _readResult(result);
+    } finally {
+      calloc.free(oldPtr);
+      calloc.free(newPtr);
+      if (keyPtr != nullptr) calloc.free(keyPtr);
     }
   }
 

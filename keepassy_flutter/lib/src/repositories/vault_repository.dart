@@ -80,6 +80,11 @@ abstract class VaultRepository {
   });
   Future<void> deleteGroup(String groupId);
   Future<EntryDetail> moveEntry(String entryId, String targetGroupId);
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+    String? keyfilePath,
+  });
 }
 
 class MockVaultRepository implements VaultRepository {
@@ -445,6 +450,15 @@ class MockVaultRepository implements VaultRepository {
     if (!moved) throw VaultRepositoryException('Entry not found in any group');
     _dirty = true;
     return detail;
+  }
+
+  @override
+  Future<void> changePassword({
+    required String oldPassword,
+    required String newPassword,
+    String? keyfilePath,
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
   }
 
   @override

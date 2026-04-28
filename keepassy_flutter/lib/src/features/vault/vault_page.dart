@@ -10,6 +10,25 @@ import '../../models/vault_models.dart';
 import '../../repositories/vault_repository.dart';
 import '../unlock/unlock_page.dart';
 
+double _pwStrength(String pw) {
+  if (pw.isEmpty) return 0;
+  double score = 0;
+  if (pw.length >= 8) score += 1;
+  if (pw.length >= 12) score += 1;
+  if (pw.length >= 16) score += 1;
+  if (RegExp(r'[a-z]').hasMatch(pw)) score += 0.5;
+  if (RegExp(r'[A-Z]').hasMatch(pw)) score += 0.5;
+  if (RegExp(r'[0-9]').hasMatch(pw)) score += 0.5;
+  if (RegExp(r'[^a-zA-Z0-9]').hasMatch(pw)) score += 0.5;
+  return (score / 4).clamp(0.0, 1.0);
+}
+
+Color _pwColor(double v) {
+  if (v < 0.3) return Colors.red;
+  if (v < 0.6) return Colors.orange;
+  return Colors.green;
+}
+
 class VaultPage extends StatefulWidget {
   const VaultPage({
     super.key,
@@ -34,6 +53,7 @@ class _VaultPageState extends State<VaultPage> {
   bool _loadingDetail = false;
   bool _passwordVisible = false;
   bool _editing = false;
+  bool _editExpires = false;
   bool _dirty = false;
   bool _saving = false;
   String? _saveError;
@@ -43,6 +63,7 @@ class _VaultPageState extends State<VaultPage> {
   bool _searchAllGroups = false;
   Timer? _autoLockTimer;
   Timer? _inactivityTimer;
+  final Set<String> _selectedEntryIds = {};
 
   // Edit form controllers
   final _editTitleController = TextEditingController();
@@ -154,6 +175,7 @@ class _VaultPageState extends State<VaultPage> {
     _editPasswordController.text = detail.password ?? '';
     _editUrlController.text = detail.url ?? '';
     _editNotesController.text = detail.notes ?? '';
+    _editExpires = detail.expires;
     setState(() => _editing = true);
   }
 
@@ -185,6 +207,7 @@ class _VaultPageState extends State<VaultPage> {
       notes: _editNotesController.text.trim().isEmpty
           ? ''
           : _editNotesController.text.trim(),
+      expires: _editExpires,
     );
 
     try {
@@ -1001,6 +1024,98 @@ class _VaultPageState extends State<VaultPage> {
     }
   }
 
+  Future<void> _bulkDelete() async {
+    if (_selectedEntryIds.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete selected entries'),
+        content: Text('Delete ${_selectedEntryIds.length} entries?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    for (final id in _selectedEntryIds.toList()) {
+      try {
+        await widget.repository.deleteEntry(id);
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      _dirty = true;
+      _selectedEntryIds.clear();
+    });
+    _refreshGroup(_selectedGroup.id);
+  }
+
+  Future<void> _changePasswordDialog() async {
+    final oldCtrl = TextEditingController();
+    final newCtrl = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Change master password'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: oldCtrl,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'Old password'),
+              autofocus: true,
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: newCtrl,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'New password'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Change'),
+          ),
+        ],
+      ),
+    );
+    final oldPw = oldCtrl.text;
+    final newPw = newCtrl.text;
+    oldCtrl.dispose();
+    newCtrl.dispose();
+    if (result != true || oldPw.isEmpty || newPw.isEmpty) return;
+    try {
+      await widget.repository.changePassword(
+        oldPassword: oldPw,
+        newPassword: newPw,
+        keyfilePath: widget.keyfilePath,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Password changed')));
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
   Future<void> _duplicateEntry() async {
     final detail = _detail;
     if (detail == null) return;
@@ -1035,6 +1150,7 @@ class _VaultPageState extends State<VaultPage> {
     final notesCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     final customFields = <_FieldEntry>[];
+    bool createExpires = false;
 
     showDialog<void>(
       context: context,
@@ -1075,17 +1191,53 @@ class _VaultPageState extends State<VaultPage> {
                             ),
                             obscureText: true,
                             textInputAction: TextInputAction.next,
+                            onChanged: (_) => setDialogState(() {}),
                           ),
                         ),
                         IconButton(
                           tooltip: 'Generate password',
-                          onPressed: () => _showPasswordGenerator(
-                            (pw) => passwordCtrl.text = pw,
-                          ),
+                          onPressed: () => _showPasswordGenerator((pw) {
+                            passwordCtrl.text = pw;
+                            setDialogState(() {});
+                          }),
                           icon: const Icon(Icons.password_outlined),
                         ),
                       ],
                     ),
+                    if (passwordCtrl.text.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(2),
+                                child: LinearProgressIndicator(
+                                  value: _pwStrength(passwordCtrl.text),
+                                  color: _pwColor(
+                                    _pwStrength(passwordCtrl.text),
+                                  ),
+                                  minHeight: 4,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              [
+                                'Weak',
+                                'Fair',
+                                'Good',
+                                'Strong',
+                              ][(_pwStrength(passwordCtrl.text) * 3.99)
+                                  .toInt()],
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: _pwColor(_pwStrength(passwordCtrl.text)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: urlCtrl,
@@ -1097,6 +1249,15 @@ class _VaultPageState extends State<VaultPage> {
                       controller: notesCtrl,
                       decoration: const InputDecoration(labelText: 'Notes'),
                       maxLines: 2,
+                    ),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      title: const Text('Entry expires'),
+                      value: createExpires,
+                      onChanged: (v) =>
+                          setDialogState(() => createExpires = v ?? false),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
                     ),
                     const SizedBox(height: 18),
                     Row(
@@ -1216,6 +1377,7 @@ class _VaultPageState extends State<VaultPage> {
                     notes: notesCtrl.text.trim(),
                     customFields: fields,
                     protectedCustomFields: protectedKeys,
+                    expires: createExpires,
                   ),
                 );
               },
@@ -1266,6 +1428,20 @@ class _VaultPageState extends State<VaultPage> {
           ],
         ),
         actions: [
+          if (_selectedEntryIds.isNotEmpty)
+            IconButton(
+              tooltip: 'Delete selected (${_selectedEntryIds.length})',
+              onPressed: _bulkDelete,
+              icon: Icon(
+                Icons.delete_sweep,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          IconButton(
+            tooltip: 'Change master password',
+            onPressed: _changePasswordDialog,
+            icon: const Icon(Icons.vpn_key_outlined),
+          ),
           IconButton(
             tooltip: 'Create entry',
             onPressed: _showCreateDialog,
@@ -1370,6 +1546,12 @@ class _VaultPageState extends State<VaultPage> {
                   searchAllGroups: _searchAllGroups,
                   onSearchAllGroupsChanged: (v) =>
                       setState(() => _searchAllGroups = v),
+                  selectedEntryIds: _selectedEntryIds,
+                  onToggleSelect: (id) => setState(
+                    () => _selectedEntryIds.contains(id)
+                        ? _selectedEntryIds.remove(id)
+                        : _selectedEntryIds.add(id),
+                  ),
                 ),
               ),
               const VerticalDivider(width: 1),
@@ -1402,6 +1584,8 @@ class _VaultPageState extends State<VaultPage> {
                   onViewHistoryDetail: _viewHistoryDetail,
                   onMoveEntry: _moveEntryDialog,
                   onDuplicateEntry: _duplicateEntry,
+                  editExpires: _editExpires,
+                  onEditExpiresChanged: (v) => setState(() => _editExpires = v),
                   showHistory: _showHistory,
                   history: _history,
                   loadingHistory: _loadingHistory,
@@ -1667,6 +1851,8 @@ class _EntryList extends StatelessWidget {
     required this.onSelected,
     this.searchAllGroups = false,
     this.onSearchAllGroupsChanged,
+    this.selectedEntryIds = const {},
+    this.onToggleSelect,
   });
 
   final GroupNode group;
@@ -1677,6 +1863,8 @@ class _EntryList extends StatelessWidget {
   final ValueChanged<EntrySummary> onSelected;
   final bool searchAllGroups;
   final ValueChanged<bool>? onSearchAllGroupsChanged;
+  final Set<String> selectedEntryIds;
+  final void Function(String)? onToggleSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -1756,6 +1944,10 @@ class _EntryList extends StatelessWidget {
                       entry: entry,
                       selected: entry.id == selectedEntry?.id,
                       onSelected: onSelected,
+                      isChecked: selectedEntryIds.contains(entry.id),
+                      onToggle: onToggleSelect != null
+                          ? () => onToggleSelect!(entry.id)
+                          : null,
                     );
                   },
                 ),
@@ -1770,11 +1962,15 @@ class _EntryRow extends StatelessWidget {
     required this.entry,
     required this.selected,
     required this.onSelected,
+    this.isChecked = false,
+    this.onToggle,
   });
 
   final EntrySummary entry;
   final bool selected;
   final ValueChanged<EntrySummary> onSelected;
+  final bool isChecked;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -1790,6 +1986,18 @@ class _EntryRow extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
+              if (onToggle != null)
+                GestureDetector(
+                  onTap: onToggle,
+                  child: Icon(
+                    isChecked ? Icons.check_box : Icons.check_box_outline_blank,
+                    size: 20,
+                    color: isChecked
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              if (onToggle != null) const SizedBox(width: 8),
               CircleAvatar(
                 radius: 18,
                 backgroundColor: selected
@@ -1856,6 +2064,8 @@ class _DetailPane extends StatelessWidget {
     this.onViewHistoryDetail,
     this.onMoveEntry,
     this.onDuplicateEntry,
+    this.editExpires = false,
+    this.onEditExpiresChanged,
     this.showHistory = false,
     this.history,
     this.loadingHistory = false,
@@ -1887,6 +2097,8 @@ class _DetailPane extends StatelessWidget {
   final void Function(HistorySummary)? onViewHistoryDetail;
   final VoidCallback? onMoveEntry;
   final VoidCallback? onDuplicateEntry;
+  final bool editExpires;
+  final ValueChanged<bool>? onEditExpiresChanged;
   final bool showHistory;
   final List<HistorySummary>? history;
   final bool loadingHistory;
@@ -2146,6 +2358,34 @@ class _DetailPane extends StatelessWidget {
               ),
           ],
         ),
+        StatefulBuilder(
+          builder: (ctx, setSt) {
+            final s = _pwStrength(passwordCtrl.text);
+            if (s == 0) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: s,
+                        color: _pwColor(s),
+                        minHeight: 4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    ['Weak', 'Fair', 'Good', 'Strong'][(s * 3.99).toInt()],
+                    style: TextStyle(fontSize: 11, color: _pwColor(s)),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
         const SizedBox(height: 14),
         TextField(
           controller: urlCtrl,
@@ -2157,6 +2397,14 @@ class _DetailPane extends StatelessWidget {
           decoration: const InputDecoration(labelText: 'Notes'),
           maxLines: 3,
         ),
+        if (onEditExpiresChanged != null)
+          CheckboxListTile(
+            title: const Text('Entry expires'),
+            value: editExpires,
+            onChanged: (v) => onEditExpiresChanged!(v ?? false),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
         // Custom fields
         if (detail != null) ...[
           const SizedBox(height: 18),
