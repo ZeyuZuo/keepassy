@@ -232,7 +232,8 @@ class _VaultPageState extends State<VaultPage> {
     final keyfileCtrl = TextEditingController();
     final hasKeyfile = widget.keyfilePath != null;
 
-    final confirmed = await showDialog<bool>(
+    // Return password from dialog to avoid dispose-while-dismissing crash.
+    final password = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Save vault'),
@@ -245,7 +246,8 @@ class _VaultPageState extends State<VaultPage> {
                 obscureText: true,
                 decoration: const InputDecoration(labelText: 'Master password'),
                 autofocus: true,
-                onSubmitted: (_) => Navigator.of(context).pop(true),
+                onSubmitted: (_) =>
+                    Navigator.of(context).pop(passwordCtrl.text),
               ),
               if (hasKeyfile) ...[
                 const SizedBox(height: 14),
@@ -263,26 +265,27 @@ class _VaultPageState extends State<VaultPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(context).pop(null),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(context).pop(passwordCtrl.text),
             child: const Text('Save'),
           ),
         ],
       ),
     );
 
-    if (confirmed != true) return;
-    final password = passwordCtrl.text;
     final keyfilePath = hasKeyfile
         ? (keyfileCtrl.text.trim().isNotEmpty
               ? keyfileCtrl.text.trim()
               : widget.keyfilePath)
         : null;
+    // Safe: dialog fully dismissed, tree unmounted.
     passwordCtrl.dispose();
     keyfileCtrl.dispose();
+
+    if (password == null || password.isEmpty) return;
 
     setState(() {
       _saving = true;
@@ -770,96 +773,192 @@ class _VaultPageState extends State<VaultPage> {
     final urlCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    final customFields = <_FieldEntry>[];
 
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New entry'),
-        content: Form(
-          key: formKey,
-          child: SingleChildScrollView(
-            child: SizedBox(
-              width: 440,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(labelText: 'Title'),
-                    textInputAction: TextInputAction.next,
-                    validator: (value) =>
-                        (value == null || value.trim().isEmpty)
-                        ? 'Title is required'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: usernameCtrl,
-                    decoration: const InputDecoration(labelText: 'Username'),
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: passwordCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Password',
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('New entry'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: SizedBox(
+                width: 440,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(labelText: 'Title'),
+                      textInputAction: TextInputAction.next,
+                      validator: (value) =>
+                          (value == null || value.trim().isEmpty)
+                          ? 'Title is required'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: usernameCtrl,
+                      decoration: const InputDecoration(labelText: 'Username'),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: passwordCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Password',
+                            ),
+                            obscureText: true,
+                            textInputAction: TextInputAction.next,
                           ),
-                          obscureText: true,
-                          textInputAction: TextInputAction.next,
+                        ),
+                        IconButton(
+                          tooltip: 'Generate password',
+                          onPressed: () => _showPasswordGenerator(
+                            (pw) => passwordCtrl.text = pw,
+                          ),
+                          icon: const Icon(Icons.password_outlined),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: urlCtrl,
+                      decoration: const InputDecoration(labelText: 'URL'),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: notesCtrl,
+                      decoration: const InputDecoration(labelText: 'Notes'),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Text(
+                          'Custom fields',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: 'Add custom field',
+                          onPressed: () {
+                            setDialogState(
+                              () => customFields.add(
+                                _FieldEntry(
+                                  keyCtrl: TextEditingController(),
+                                  valueCtrl: TextEditingController(),
+                                  protect: false,
+                                ),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.add, size: 20),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    for (var i = 0; i < customFields.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          key: ValueKey(customFields[i]),
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: customFields[i].keyCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Field name',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextField(
+                                controller: customFields[i].valueCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'Value',
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: customFields[i].protect
+                                  ? 'Protected'
+                                  : 'Not protected',
+                              onPressed: () {
+                                setDialogState(
+                                  () => customFields[i].protect =
+                                      !customFields[i].protect,
+                                );
+                              },
+                              icon: Icon(
+                                customFields[i].protect
+                                    ? Icons.lock
+                                    : Icons.lock_open,
+                                size: 18,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Remove field',
+                              onPressed: () {
+                                customFields[i].keyCtrl.dispose();
+                                customFields[i].valueCtrl.dispose();
+                                setDialogState(() => customFields.removeAt(i));
+                              },
+                              icon: Icon(
+                                Icons.remove_circle_outline,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Generate password',
-                        onPressed: () => _showPasswordGenerator(
-                          (pw) => passwordCtrl.text = pw,
-                        ),
-                        icon: const Icon(Icons.password_outlined),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: urlCtrl,
-                    decoration: const InputDecoration(labelText: 'URL'),
-                    textInputAction: TextInputAction.next,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: notesCtrl,
-                    decoration: const InputDecoration(labelText: 'Notes'),
-                    maxLines: 2,
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) return;
+                Navigator.of(context).pop();
+                final fields = <String, String>{};
+                for (final f in customFields) {
+                  final key = f.keyCtrl.text.trim();
+                  if (key.isNotEmpty) {
+                    fields[key] = f.valueCtrl.text;
+                  }
+                  f.keyCtrl.dispose();
+                  f.valueCtrl.dispose();
+                }
+                _createEntry(
+                  CreateEntryRequest(
+                    groupId: _selectedGroup.id,
+                    title: titleCtrl.text.trim(),
+                    username: usernameCtrl.text.trim(),
+                    password: passwordCtrl.text,
+                    url: urlCtrl.text.trim(),
+                    notes: notesCtrl.text.trim(),
+                    customFields: fields,
+                  ),
+                );
+              },
+              child: const Text('Create'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (!formKey.currentState!.validate()) return;
-              Navigator.of(context).pop();
-              _createEntry(
-                CreateEntryRequest(
-                  groupId: _selectedGroup.id,
-                  title: titleCtrl.text.trim(),
-                  username: usernameCtrl.text.trim(),
-                  password: passwordCtrl.text,
-                  url: urlCtrl.text.trim(),
-                  notes: notesCtrl.text.trim(),
-                ),
-              );
-            },
-            child: const Text('Create'),
-          ),
-        ],
       ),
     );
   }
@@ -1507,11 +1606,11 @@ class _DetailPane extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           for (final item in detail.readonlyFields.entries)
-            _buildCopyField(
+            _buildFieldRow(
               context: context,
-              icon: Icons.tune_outlined,
-              label: item.key,
+              fieldKey: item.key,
               value: item.value,
+              isProtected: detail.protectedFields.contains(item.key),
             ),
         ],
         const SizedBox(height: 18),
@@ -1676,6 +1775,15 @@ class _DetailPane extends StatelessWidget {
             for (final entry in detail!.readonlyFields.entries)
               Row(
                 children: [
+                  if (detail!.protectedFields.contains(entry.key))
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Icon(
+                        Icons.lock,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   Expanded(
                     child: TextField(
                       controller: TextEditingController(text: entry.value),
@@ -1696,6 +1804,28 @@ class _DetailPane extends StatelessWidget {
               ),
         ],
       ],
+    );
+  }
+
+  Widget _buildFieldRow({
+    required BuildContext context,
+    required String fieldKey,
+    required String value,
+    required bool isProtected,
+  }) {
+    return _FieldLine(
+      icon: isProtected ? Icons.lock : Icons.tune_outlined,
+      label: fieldKey,
+      value: isProtected ? '[protected]' : value,
+      trailing: isProtected
+          ? null
+          : value.isNotEmpty
+          ? IconButton(
+              tooltip: 'Copy $fieldKey',
+              onPressed: () => _copyToClipboard(context, value, fieldKey),
+              icon: const Icon(Icons.copy, size: 18),
+            )
+          : null,
     );
   }
 
@@ -1821,4 +1951,16 @@ class _FieldLine extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FieldEntry {
+  _FieldEntry({
+    required this.keyCtrl,
+    required this.valueCtrl,
+    required this.protect,
+  });
+
+  final TextEditingController keyCtrl;
+  final TextEditingController valueCtrl;
+  bool protect;
 }

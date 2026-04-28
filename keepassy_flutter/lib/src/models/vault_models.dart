@@ -115,6 +115,7 @@ class EntryDetail {
     this.password,
     this.notes,
     this.fields = const {},
+    this.protectedFields = const [],
     this.attachments = const [],
   });
 
@@ -125,6 +126,7 @@ class EntryDetail {
   final String? password;
   final String? notes;
   final Map<String, String> fields;
+  final List<String> protectedFields;
   final List<AttachmentSummary> attachments;
 
   String get displayTitle {
@@ -149,6 +151,11 @@ class EntryDetail {
       fields: rawFields.map(
         (key, value) => MapEntry(key, value?.toString() ?? ''),
       ),
+      protectedFields:
+          (json['protected_fields'] as List<Object?>?)?.cast<String>().toList(
+            growable: false,
+          ) ??
+          const [],
       attachments: (json['attachments'] as List<Object?>? ?? const [])
           .cast<Map<String, Object?>>()
           .map(AttachmentSummary.fromJson)
