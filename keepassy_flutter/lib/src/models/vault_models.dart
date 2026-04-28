@@ -60,11 +60,11 @@ class GroupNode {
       entries: (json['entries'] as List<Object?>? ?? const [])
           .cast<Map<String, Object?>>()
           .map(EntrySummary.fromJson)
-          .toList(growable: false),
+          .toList(growable: true),
       groups: (json['groups'] as List<Object?>? ?? const [])
           .cast<Map<String, Object?>>()
           .map(GroupNode.fromJson)
-          .toList(growable: false),
+          .toList(growable: true),
     );
   }
 

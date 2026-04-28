@@ -49,8 +49,11 @@ class _UnlockPageState extends State<UnlockPage> {
       }
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) =>
-              VaultPage(repository: widget.repository, initialVault: vault),
+          builder: (_) => VaultPage(
+            repository: widget.repository,
+            initialVault: vault,
+            keyfilePath: _useKeyfile ? _keyfileController.text.trim() : null,
+          ),
         ),
       );
     } on Object catch (err) {

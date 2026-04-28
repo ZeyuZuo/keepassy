@@ -12,10 +12,12 @@ class VaultPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.initialVault,
+    this.keyfilePath,
   });
 
   final VaultRepository repository;
   final OpenedVault initialVault;
+  final String? keyfilePath;
 
   @override
   State<VaultPage> createState() => _VaultPageState();
@@ -221,16 +223,37 @@ class _VaultPageState extends State<VaultPage> {
 
   Future<void> _saveVault() async {
     final passwordCtrl = TextEditingController();
+    final keyfileCtrl = TextEditingController();
+    final hasKeyfile = widget.keyfilePath != null;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Save vault'),
-        content: TextField(
-          controller: passwordCtrl,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'Master password'),
-          autofocus: true,
-          onSubmitted: (_) => Navigator.of(context).pop(true),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: passwordCtrl,
+                obscureText: true,
+                decoration: const InputDecoration(labelText: 'Master password'),
+                autofocus: true,
+                onSubmitted: (_) => Navigator.of(context).pop(true),
+              ),
+              if (hasKeyfile) ...[
+                const SizedBox(height: 14),
+                TextField(
+                  controller: keyfileCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Keyfile path',
+                    hintText: widget.keyfilePath,
+                    prefixIcon: const Icon(Icons.insert_drive_file_outlined),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -247,7 +270,13 @@ class _VaultPageState extends State<VaultPage> {
 
     if (confirmed != true) return;
     final password = passwordCtrl.text;
+    final keyfilePath = hasKeyfile
+        ? (keyfileCtrl.text.trim().isNotEmpty
+              ? keyfileCtrl.text.trim()
+              : widget.keyfilePath)
+        : null;
     passwordCtrl.dispose();
+    keyfileCtrl.dispose();
 
     setState(() {
       _saving = true;
@@ -255,7 +284,10 @@ class _VaultPageState extends State<VaultPage> {
     });
 
     try {
-      await widget.repository.save(masterPassword: password);
+      await widget.repository.save(
+        masterPassword: password,
+        keyfilePath: keyfilePath,
+      );
       if (!mounted) return;
       setState(() {
         _dirty = false;
@@ -595,9 +627,11 @@ class _SaveButton extends StatelessWidget {
         ? 'Save vault (unsaved changes)'
         : 'Save vault';
 
+    final enabled = dirty || error != null;
+
     return IconButton(
       tooltip: tooltip,
-      onPressed: onPressed,
+      onPressed: enabled ? onPressed : null,
       icon: Icon(
         error != null
             ? Icons.error_outline
