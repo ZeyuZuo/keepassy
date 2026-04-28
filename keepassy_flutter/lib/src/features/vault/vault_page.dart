@@ -663,6 +663,40 @@ class _VaultPageState extends State<VaultPage> {
     }
   }
 
+  Future<void> _toggleCustomFieldProtect(
+    String key,
+    String value,
+    bool currentlyProtected,
+  ) async {
+    final entryId = _selectedEntry?.id;
+    if (entryId == null) return;
+
+    try {
+      final updated = await widget.repository.setCustomField(
+        entryId: entryId,
+        key: key,
+        value: value,
+        protect: !currentlyProtected,
+      );
+      if (!mounted) return;
+      setState(() {
+        _detail = updated;
+        _dirty = true;
+        _editing = true;
+      });
+      _editTitleController.text = updated.title ?? '';
+      _editUsernameController.text = updated.username ?? '';
+      _editPasswordController.text = updated.password ?? '';
+      _editUrlController.text = updated.url ?? '';
+      _editNotesController.text = updated.notes ?? '';
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
   Future<void> _loadHistory() async {
     final entryId = _selectedEntry?.id;
     if (entryId == null) return;
@@ -935,10 +969,12 @@ class _VaultPageState extends State<VaultPage> {
                 if (!formKey.currentState!.validate()) return;
                 Navigator.of(context).pop();
                 final fields = <String, String>{};
+                final protectedKeys = <String>[];
                 for (final f in customFields) {
                   final key = f.keyCtrl.text.trim();
                   if (key.isNotEmpty) {
                     fields[key] = f.valueCtrl.text;
+                    if (f.protect) protectedKeys.add(key);
                   }
                   f.keyCtrl.dispose();
                   f.valueCtrl.dispose();
@@ -952,6 +988,7 @@ class _VaultPageState extends State<VaultPage> {
                     url: urlCtrl.text.trim(),
                     notes: notesCtrl.text.trim(),
                     customFields: fields,
+                    protectedCustomFields: protectedKeys,
                   ),
                 );
               },
@@ -1122,6 +1159,7 @@ class _VaultPageState extends State<VaultPage> {
                   onRemoveAttachment: _removeAttachment,
                   onAddCustomField: _addCustomField,
                   onRemoveCustomField: _removeCustomField,
+                  onToggleCustomFieldProtect: _toggleCustomFieldProtect,
                   onToggleHistory: _loadHistory,
                   onViewHistoryDetail: _viewHistoryDetail,
                   showHistory: _showHistory,
@@ -1455,6 +1493,7 @@ class _DetailPane extends StatelessWidget {
     this.onRemoveAttachment,
     this.onAddCustomField,
     this.onRemoveCustomField,
+    this.onToggleCustomFieldProtect,
     this.onToggleHistory,
     this.onViewHistoryDetail,
     this.showHistory = false,
@@ -1483,6 +1522,7 @@ class _DetailPane extends StatelessWidget {
   final void Function(EntrySummary, String)? onRemoveAttachment;
   final void Function()? onAddCustomField;
   final void Function(String)? onRemoveCustomField;
+  final void Function(String, String, bool)? onToggleCustomFieldProtect;
   final VoidCallback? onToggleHistory;
   final void Function(HistorySummary)? onViewHistoryDetail;
   final bool showHistory;
@@ -1775,13 +1815,21 @@ class _DetailPane extends StatelessWidget {
             for (final entry in detail!.readonlyFields.entries)
               Row(
                 children: [
-                  if (detail!.protectedFields.contains(entry.key))
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Icon(
-                        Icons.lock,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  if (onToggleCustomFieldProtect != null)
+                    IconButton(
+                      tooltip: detail!.protectedFields.contains(entry.key)
+                          ? 'Protected — click to unprotect'
+                          : 'Not protected — click to protect',
+                      onPressed: () => onToggleCustomFieldProtect!(
+                        entry.key,
+                        entry.value,
+                        detail!.protectedFields.contains(entry.key),
+                      ),
+                      icon: Icon(
+                        detail!.protectedFields.contains(entry.key)
+                            ? Icons.lock
+                            : Icons.lock_open,
+                        size: 18,
                       ),
                     ),
                   Expanded(

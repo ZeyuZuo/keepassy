@@ -193,6 +193,7 @@ class CreateEntryRequest {
     this.url,
     this.notes,
     this.customFields = const {},
+    this.protectedCustomFields = const [],
   });
 
   final String groupId;
@@ -202,6 +203,7 @@ class CreateEntryRequest {
   final String? url;
   final String? notes;
   final Map<String, String> customFields;
+  final List<String> protectedCustomFields;
 
   Map<String, Object?> toJson() => {
     'group_id': groupId,
@@ -211,6 +213,7 @@ class CreateEntryRequest {
     'url': url,
     'notes': notes,
     'custom_fields': customFields,
+    'protected_custom_fields': protectedCustomFields,
   };
 }
 
