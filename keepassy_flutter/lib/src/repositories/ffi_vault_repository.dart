@@ -35,10 +35,37 @@ typedef _SessionCloseDart = void Function(Pointer<Void> session);
 typedef _StringFreeNative = Void Function(Pointer<Utf8> value);
 typedef _StringFreeDart = void Function(Pointer<Utf8> value);
 
-typedef _ReadJsonWithIdNative =
+typedef _JsonWithIdNative =
     _KeepassYFfiResult Function(Pointer<Void> session, Pointer<Utf8> id);
-typedef _ReadJsonWithIdDart =
+typedef _JsonWithIdDart =
     _KeepassYFfiResult Function(Pointer<Void> session, Pointer<Utf8> id);
+
+typedef _JsonWithRequestNative =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> requestJson,
+    );
+typedef _JsonWithRequestDart =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> requestJson,
+    );
+
+typedef _SaveNative =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> masterPassword,
+      Pointer<Utf8> keyfilePath,
+    );
+typedef _SaveDart =
+    _KeepassYFfiResult Function(
+      Pointer<Void> session,
+      Pointer<Utf8> masterPassword,
+      Pointer<Utf8> keyfilePath,
+    );
+
+typedef _IsDirtyNative = _KeepassYFfiResult Function(Pointer<Void> session);
+typedef _IsDirtyDart = _KeepassYFfiResult Function(Pointer<Void> session);
 
 DynamicLibrary _loadLibrary() {
   final envLib = Platform.environment['KEEPASSY_FFI_LIB'];
@@ -85,14 +112,27 @@ class FfiVaultRepository implements VaultRepository {
     _stringFree = _lib.lookupFunction<_StringFreeNative, _StringFreeDart>(
       'keepassy_string_free',
     );
-    _entriesJson = _lib
-        .lookupFunction<_ReadJsonWithIdNative, _ReadJsonWithIdDart>(
-          'keepassy_entries_json',
+    _entriesJson = _lib.lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+      'keepassy_entries_json',
+    );
+    _entryDetailJson = _lib.lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+      'keepassy_entry_detail_json',
+    );
+    _createEntryJson = _lib
+        .lookupFunction<_JsonWithRequestNative, _JsonWithRequestDart>(
+          'keepassy_create_entry_json',
         );
-    _entryDetailJson = _lib
-        .lookupFunction<_ReadJsonWithIdNative, _ReadJsonWithIdDart>(
-          'keepassy_entry_detail_json',
+    _updateEntryJson = _lib
+        .lookupFunction<_JsonWithRequestNative, _JsonWithRequestDart>(
+          'keepassy_update_entry_json',
         );
+    _deleteEntryJson = _lib.lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+      'keepassy_delete_entry_json',
+    );
+    _isDirty = _lib.lookupFunction<_IsDirtyNative, _IsDirtyDart>(
+      'keepassy_is_dirty',
+    );
+    _save = _lib.lookupFunction<_SaveNative, _SaveDart>('keepassy_save');
   }
 
   final DynamicLibrary _lib;
@@ -101,8 +141,13 @@ class FfiVaultRepository implements VaultRepository {
   late final _OpenLocalDart _openLocal;
   late final _SessionCloseDart _sessionClose;
   late final _StringFreeDart _stringFree;
-  late final _ReadJsonWithIdDart _entriesJson;
-  late final _ReadJsonWithIdDart _entryDetailJson;
+  late final _JsonWithIdDart _entriesJson;
+  late final _JsonWithIdDart _entryDetailJson;
+  late final _JsonWithRequestDart _createEntryJson;
+  late final _JsonWithRequestDart _updateEntryJson;
+  late final _JsonWithIdDart _deleteEntryJson;
+  late final _IsDirtyDart _isDirty;
+  late final _SaveDart _save;
 
   @override
   Future<OpenedVault> openLocal({
@@ -165,6 +210,74 @@ class FfiVaultRepository implements VaultRepository {
       return EntryDetail.fromJson(json);
     } finally {
       calloc.free(idPtr);
+    }
+  }
+
+  @override
+  Future<EntryDetail> createEntry(CreateEntryRequest request) async {
+    final session = _requireSession();
+    final jsonPtr = jsonEncode(request.toJson()).toNativeUtf8();
+    try {
+      final result = _createEntryJson(session, jsonPtr);
+      final json = _readJsonObject(result);
+      return EntryDetail.fromJson(json);
+    } finally {
+      calloc.free(jsonPtr);
+    }
+  }
+
+  @override
+  Future<EntryDetail> updateEntry(UpdateEntryRequest request) async {
+    final session = _requireSession();
+    final jsonPtr = jsonEncode(request.toJson()).toNativeUtf8();
+    try {
+      final result = _updateEntryJson(session, jsonPtr);
+      final json = _readJsonObject(result);
+      return EntryDetail.fromJson(json);
+    } finally {
+      calloc.free(jsonPtr);
+    }
+  }
+
+  @override
+  Future<void> deleteEntry(String entryId) async {
+    final session = _requireSession();
+    final idPtr = entryId.toNativeUtf8();
+    try {
+      final result = _deleteEntryJson(session, idPtr);
+      _readResult(result);
+    } finally {
+      calloc.free(idPtr);
+    }
+  }
+
+  @override
+  Future<bool> isDirty() async {
+    final session = _requireSession();
+    final result = _isDirty(session);
+    final json = _readJsonObject(result);
+    return (json['dirty'] as bool?) ?? false;
+  }
+
+  @override
+  Future<void> save({
+    required String masterPassword,
+    String? keyfilePath,
+  }) async {
+    final session = _requireSession();
+    final passwordPtr = masterPassword.toNativeUtf8();
+    final keyfilePtr = (keyfilePath != null && keyfilePath.trim().isNotEmpty)
+        ? keyfilePath.toNativeUtf8()
+        : nullptr;
+
+    try {
+      final result = _save(session, passwordPtr, keyfilePtr);
+      _readJsonObject(result);
+    } finally {
+      calloc.free(passwordPtr);
+      if (keyfilePtr != nullptr) {
+        calloc.free(keyfilePtr);
+      }
     }
   }
 

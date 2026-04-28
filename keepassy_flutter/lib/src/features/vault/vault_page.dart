@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/vault_models.dart';
 import '../../repositories/vault_repository.dart';
@@ -25,6 +28,17 @@ class _VaultPageState extends State<VaultPage> {
   String _query = '';
   bool _loadingDetail = false;
   bool _passwordVisible = false;
+  bool _editing = false;
+  bool _dirty = false;
+  bool _saving = false;
+  String? _saveError;
+
+  // Edit form controllers
+  final _editTitleController = TextEditingController();
+  final _editUsernameController = TextEditingController();
+  final _editPasswordController = TextEditingController();
+  final _editUrlController = TextEditingController();
+  final _editNotesController = TextEditingController();
 
   @override
   void initState() {
@@ -34,7 +48,18 @@ class _VaultPageState extends State<VaultPage> {
     }
   }
 
+  @override
+  void dispose() {
+    _editTitleController.dispose();
+    _editUsernameController.dispose();
+    _editPasswordController.dispose();
+    _editUrlController.dispose();
+    _editNotesController.dispose();
+    super.dispose();
+  }
+
   Future<void> _selectEntry(EntrySummary entry) async {
+    _cancelEdit();
     setState(() {
       _selectedEntry = entry;
       _detail = null;
@@ -43,22 +68,15 @@ class _VaultPageState extends State<VaultPage> {
     });
     try {
       final detail = await widget.repository.entryDetail(entry.id);
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _detail = detail;
-      });
+      if (!mounted) return;
+      setState(() => _detail = detail);
     } finally {
-      if (mounted) {
-        setState(() {
-          _loadingDetail = false;
-        });
-      }
+      if (mounted) setState(() => _loadingDetail = false);
     }
   }
 
   void _selectGroup(GroupNode group) {
+    _cancelEdit();
     setState(() {
       _selectedGroup = group;
       _selectedEntry = null;
@@ -70,14 +88,322 @@ class _VaultPageState extends State<VaultPage> {
     }
   }
 
-  Future<void> _lock() async {
-    await widget.repository.close();
-    if (!mounted) {
-      return;
+  Future<void> _createEntry(CreateEntryRequest request) async {
+    try {
+      final detail = await widget.repository.createEntry(request);
+      if (!mounted) return;
+      setState(() => _dirty = true);
+      // Refresh the vault tree by re-fetching the group
+      _refreshGroup(_selectedGroup.id);
+      _selectEntry(
+        EntrySummary(
+          id: detail.id,
+          title: detail.title,
+          username: detail.username,
+          url: detail.url,
+        ),
+      );
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
     }
+  }
+
+  void _startEdit() {
+    final detail = _detail;
+    if (detail == null) return;
+    _editTitleController.text = detail.title ?? '';
+    _editUsernameController.text = detail.username ?? '';
+    _editPasswordController.text = detail.password ?? '';
+    _editUrlController.text = detail.url ?? '';
+    _editNotesController.text = detail.notes ?? '';
+    setState(() => _editing = true);
+  }
+
+  void _cancelEdit() {
+    setState(() => _editing = false);
+    _editTitleController.clear();
+    _editUsernameController.clear();
+    _editPasswordController.clear();
+    _editUrlController.clear();
+    _editNotesController.clear();
+  }
+
+  Future<void> _saveEdit() async {
+    final entryId = _selectedEntry?.id;
+    if (entryId == null) return;
+
+    final request = UpdateEntryRequest(
+      entryId: entryId,
+      title: _editTitleController.text.trim().isEmpty
+          ? ''
+          : _editTitleController.text.trim(),
+      username: _editUsernameController.text.trim().isEmpty
+          ? ''
+          : _editUsernameController.text.trim(),
+      password: _editPasswordController.text,
+      url: _editUrlController.text.trim().isEmpty
+          ? ''
+          : _editUrlController.text.trim(),
+      notes: _editNotesController.text.trim().isEmpty
+          ? ''
+          : _editNotesController.text.trim(),
+    );
+
+    try {
+      final updated = await widget.repository.updateEntry(request);
+      if (!mounted) return;
+      setState(() {
+        _detail = updated;
+        _dirty = true;
+        _editing = false;
+      });
+      _refreshGroup(_selectedGroup.id);
+      _selectEntry(
+        EntrySummary(
+          id: updated.id,
+          title: updated.title,
+          username: updated.username,
+          url: updated.url,
+        ),
+      );
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
+  Future<void> _deleteEntry() async {
+    final entryId = _selectedEntry?.id;
+    if (entryId == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete entry'),
+        content: Text('Delete "${_detail?.displayTitle ?? entryId}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await widget.repository.deleteEntry(entryId);
+      if (!mounted) return;
+      setState(() {
+        _dirty = true;
+        _selectedEntry = null;
+        _detail = null;
+        _editing = false;
+      });
+      _refreshGroup(_selectedGroup.id);
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
+  Future<void> _saveVault() async {
+    final passwordCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save vault'),
+        content: TextField(
+          controller: passwordCtrl,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Master password'),
+          autofocus: true,
+          onSubmitted: (_) => Navigator.of(context).pop(true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    final password = passwordCtrl.text;
+    passwordCtrl.dispose();
+
+    setState(() {
+      _saving = true;
+      _saveError = null;
+    });
+
+    try {
+      await widget.repository.save(masterPassword: password);
+      if (!mounted) return;
+      setState(() {
+        _dirty = false;
+        _saving = false;
+      });
+    } on Object catch (err) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _saveError = err.toString();
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Save failed: $err')));
+    }
+  }
+
+  Future<void> _lock() async {
+    if (_dirty) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Unsaved changes'),
+          content: const Text(
+            'You have unsaved changes. Locking will discard them.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Discard and lock'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    await widget.repository.close();
+    if (!mounted) return;
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => UnlockPage(repository: widget.repository),
+      ),
+    );
+  }
+
+  void _refreshGroup(String groupId) {
+    widget.repository.entriesForGroup(groupId).then((entries) {
+      if (!mounted) return;
+      setState(() {
+        final groups = widget.initialVault.groupTree.flatten().toList();
+        final group = groups.firstWhere(
+          (g) => g.id == groupId,
+          orElse: () => _selectedGroup,
+        );
+        group.entries
+          ..clear()
+          ..addAll(entries);
+      });
+    });
+  }
+
+  void _showCreateDialog() {
+    final titleCtrl = TextEditingController();
+    final usernameCtrl = TextEditingController();
+    final passwordCtrl = TextEditingController();
+    final urlCtrl = TextEditingController();
+    final notesCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New entry'),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: SizedBox(
+              width: 440,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(labelText: 'Title'),
+                    textInputAction: TextInputAction.next,
+                    validator: (value) =>
+                        (value == null || value.trim().isEmpty)
+                        ? 'Title is required'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: usernameCtrl,
+                    decoration: const InputDecoration(labelText: 'Username'),
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: passwordCtrl,
+                    decoration: const InputDecoration(labelText: 'Password'),
+                    obscureText: true,
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: urlCtrl,
+                    decoration: const InputDecoration(labelText: 'URL'),
+                    textInputAction: TextInputAction.next,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: notesCtrl,
+                    decoration: const InputDecoration(labelText: 'Notes'),
+                    maxLines: 2,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!formKey.currentState!.validate()) return;
+              Navigator.of(context).pop();
+              _createEntry(
+                CreateEntryRequest(
+                  groupId: _selectedGroup.id,
+                  title: titleCtrl.text.trim(),
+                  username: usernameCtrl.text.trim(),
+                  password: passwordCtrl.text,
+                  url: urlCtrl.text.trim(),
+                  notes: notesCtrl.text.trim(),
+                ),
+              );
+            },
+            child: const Text('Create'),
+          ),
+        ],
       ),
     );
   }
@@ -118,13 +444,14 @@ class _VaultPageState extends State<VaultPage> {
         actions: [
           IconButton(
             tooltip: 'Create entry',
-            onPressed: () {},
+            onPressed: _showCreateDialog,
             icon: const Icon(Icons.add),
           ),
-          IconButton(
-            tooltip: 'Save vault',
-            onPressed: () {},
-            icon: const Icon(Icons.save_outlined),
+          _SaveButton(
+            dirty: _dirty,
+            saving: _saving,
+            error: _saveError,
+            onPressed: _saveVault,
           ),
           IconButton(
             tooltip: 'Lock vault',
@@ -167,9 +494,19 @@ class _VaultPageState extends State<VaultPage> {
                     detail: _detail,
                     loading: _loadingDetail,
                     passwordVisible: _passwordVisible,
+                    editing: _editing,
+                    titleCtrl: _editTitleController,
+                    usernameCtrl: _editUsernameController,
+                    passwordCtrl: _editPasswordController,
+                    urlCtrl: _editUrlController,
+                    notesCtrl: _editNotesController,
                     onPasswordVisibilityChanged: () {
                       setState(() => _passwordVisible = !_passwordVisible);
                     },
+                    onEdit: _startEdit,
+                    onSaveEdit: _saveEdit,
+                    onCancelEdit: _cancelEdit,
+                    onDelete: _deleteEntry,
                   ),
                 ),
               ],
@@ -204,14 +541,74 @@ class _VaultPageState extends State<VaultPage> {
                   detail: _detail,
                   loading: _loadingDetail,
                   passwordVisible: _passwordVisible,
+                  editing: _editing,
+                  titleCtrl: _editTitleController,
+                  usernameCtrl: _editUsernameController,
+                  passwordCtrl: _editPasswordController,
+                  urlCtrl: _editUrlController,
+                  notesCtrl: _editNotesController,
                   onPasswordVisibilityChanged: () {
                     setState(() => _passwordVisible = !_passwordVisible);
                   },
+                  onEdit: _startEdit,
+                  onSaveEdit: _saveEdit,
+                  onCancelEdit: _cancelEdit,
+                  onDelete: _deleteEntry,
                 ),
               ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _SaveButton extends StatelessWidget {
+  const _SaveButton({
+    required this.dirty,
+    required this.saving,
+    required this.onPressed,
+    this.error,
+  });
+
+  final bool dirty;
+  final bool saving;
+  final VoidCallback onPressed;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    if (saving) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: SizedBox.square(
+          dimension: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    final tooltip = error != null
+        ? 'Save failed: $error'
+        : dirty
+        ? 'Save vault (unsaved changes)'
+        : 'Save vault';
+
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Icon(
+        error != null
+            ? Icons.error_outline
+            : dirty
+            ? Icons.save_as_outlined
+            : Icons.save_outlined,
+        color: error != null
+            ? Theme.of(context).colorScheme.error
+            : dirty
+            ? Theme.of(context).colorScheme.primary
+            : null,
       ),
     );
   }
@@ -464,23 +861,52 @@ class _DetailPane extends StatelessWidget {
     required this.detail,
     required this.loading,
     required this.passwordVisible,
+    required this.editing,
+    required this.titleCtrl,
+    required this.usernameCtrl,
+    required this.passwordCtrl,
+    required this.urlCtrl,
+    required this.notesCtrl,
     required this.onPasswordVisibilityChanged,
+    required this.onEdit,
+    required this.onSaveEdit,
+    required this.onCancelEdit,
+    required this.onDelete,
   });
 
   final EntryDetail? detail;
   final bool loading;
   final bool passwordVisible;
+  final bool editing;
+  final TextEditingController titleCtrl;
+  final TextEditingController usernameCtrl;
+  final TextEditingController passwordCtrl;
+  final TextEditingController urlCtrl;
+  final TextEditingController notesCtrl;
   final VoidCallback onPasswordVisibilityChanged;
+  final VoidCallback onEdit;
+  final VoidCallback onSaveEdit;
+  final VoidCallback onCancelEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    final detail = this.detail;
     if (loading) {
       return const Center(child: CircularProgressIndicator());
     }
     if (detail == null) {
       return const Center(child: Text('Select an entry'));
     }
+
+    if (editing) {
+      return _buildEditMode(context);
+    }
+    return _buildReadMode(context);
+  }
+
+  Widget _buildReadMode(BuildContext context) {
+    final detail = this.detail!;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -497,32 +923,31 @@ class _DetailPane extends StatelessWidget {
             ),
             IconButton(
               tooltip: 'Edit entry',
-              onPressed: () {},
+              onPressed: onEdit,
               icon: const Icon(Icons.edit_outlined),
+            ),
+            IconButton(
+              tooltip: 'Delete entry',
+              onPressed: onDelete,
+              icon: Icon(Icons.delete_outline, color: colorScheme.error),
             ),
           ],
         ),
         const SizedBox(height: 20),
-        _FieldLine(
+        _buildCopyField(
+          context: context,
           icon: Icons.person_outline,
           label: 'Username',
           value: detail.username ?? '',
         ),
-        _FieldLine(
-          icon: Icons.password_outlined,
-          label: 'Password',
-          value: passwordVisible ? detail.password ?? '' : '••••••••••••',
-          trailing: IconButton(
-            tooltip: passwordVisible ? 'Hide password' : 'Show password',
-            onPressed: onPasswordVisibilityChanged,
-            icon: Icon(
-              passwordVisible
-                  ? Icons.visibility_off_outlined
-                  : Icons.visibility_outlined,
-            ),
-          ),
+        _buildPasswordField(
+          context: context,
+          visible: passwordVisible,
+          value: detail.password ?? '',
+          onToggle: onPasswordVisibilityChanged,
         ),
-        _FieldLine(
+        _buildCopyField(
+          context: context,
           icon: Icons.link_outlined,
           label: 'URL',
           value: detail.url ?? '',
@@ -542,7 +967,8 @@ class _DetailPane extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           for (final item in detail.readonlyFields.entries)
-            _FieldLine(
+            _buildCopyField(
+              context: context,
               icon: Icons.tune_outlined,
               label: item.key,
               value: item.value,
@@ -568,6 +994,138 @@ class _DetailPane extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  Widget _buildEditMode(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Edit entry',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Save changes',
+              onPressed: onSaveEdit,
+              icon: const Icon(Icons.check),
+            ),
+            IconButton(
+              tooltip: 'Cancel editing',
+              onPressed: onCancelEdit,
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        TextField(
+          controller: titleCtrl,
+          decoration: const InputDecoration(labelText: 'Title'),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: usernameCtrl,
+          decoration: const InputDecoration(labelText: 'Username'),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: passwordCtrl,
+          decoration: const InputDecoration(labelText: 'Password'),
+          obscureText: true,
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: urlCtrl,
+          decoration: const InputDecoration(labelText: 'URL'),
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: notesCtrl,
+          decoration: const InputDecoration(labelText: 'Notes'),
+          maxLines: 3,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCopyField({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return _FieldLine(
+      icon: icon,
+      label: label,
+      value: value,
+      trailing: value.isNotEmpty
+          ? IconButton(
+              tooltip: 'Copy $label',
+              onPressed: () => _copyToClipboard(context, value, label),
+              icon: const Icon(Icons.copy, size: 18),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildPasswordField({
+    required BuildContext context,
+    required bool visible,
+    required String value,
+    required VoidCallback onToggle,
+  }) {
+    return _FieldLine(
+      icon: Icons.password_outlined,
+      label: 'Password',
+      value: visible ? value : '••••••••••••',
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (value.isNotEmpty)
+            IconButton(
+              tooltip: 'Copy password',
+              onPressed: () => _copyToClipboard(context, value, 'Password'),
+              icon: const Icon(Icons.copy, size: 18),
+            ),
+          IconButton(
+            tooltip: visible ? 'Hide password' : 'Show password',
+            onPressed: onToggle,
+            icon: Icon(
+              visible
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Timer? _clipboardTimer;
+
+  static void _copyToClipboard(
+    BuildContext context,
+    String value,
+    String label,
+  ) {
+    Clipboard.setData(ClipboardData(text: value));
+    _clipboardTimer?.cancel();
+    _clipboardTimer = Timer(const Duration(seconds: 30), () {
+      Clipboard.setData(const ClipboardData(text: ''));
+    });
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$label copied to clipboard'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }
 

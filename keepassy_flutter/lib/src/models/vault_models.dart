@@ -174,3 +174,60 @@ class AttachmentSummary {
     );
   }
 }
+
+class CreateEntryRequest {
+  const CreateEntryRequest({
+    required this.groupId,
+    this.title,
+    this.username,
+    this.password,
+    this.url,
+    this.notes,
+    this.customFields = const {},
+  });
+
+  final String groupId;
+  final String? title;
+  final String? username;
+  final String? password;
+  final String? url;
+  final String? notes;
+  final Map<String, String> customFields;
+
+  Map<String, Object?> toJson() => {
+    'group_id': groupId,
+    'title': title,
+    'username': username,
+    'password': password,
+    'url': url,
+    'notes': notes,
+    'custom_fields': customFields,
+  };
+}
+
+class UpdateEntryRequest {
+  const UpdateEntryRequest({
+    required this.entryId,
+    this.title,
+    this.username,
+    this.password,
+    this.url,
+    this.notes,
+  });
+
+  final String entryId;
+  final String? title;
+  final String? username;
+  final String? password;
+  final String? url;
+  final String? notes;
+
+  Map<String, Object?> toJson() => {
+    'entry_id': entryId,
+    'title': title,
+    'username': username,
+    'password': password,
+    'url': url,
+    'notes': notes,
+  };
+}

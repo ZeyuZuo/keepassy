@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../models/vault_models.dart';
 
 abstract class VaultRepository {
@@ -11,12 +13,23 @@ abstract class VaultRepository {
 
   Future<EntryDetail> entryDetail(String entryId);
 
+  Future<EntryDetail> createEntry(CreateEntryRequest request);
+
+  Future<EntryDetail> updateEntry(UpdateEntryRequest request);
+
+  Future<void> deleteEntry(String entryId);
+
+  Future<bool> isDirty();
+
+  Future<void> save({required String masterPassword, String? keyfilePath});
+
   Future<void> close();
 }
 
 class MockVaultRepository implements VaultRepository {
   OpenedVault? _vault;
   final Map<String, EntryDetail> _details = {};
+  bool _dirty = false;
 
   @override
   Future<OpenedVault> openLocal({
@@ -34,6 +47,7 @@ class MockVaultRepository implements VaultRepository {
 
     final vault = _sampleVault(path);
     _vault = vault;
+    _dirty = false;
     _details
       ..clear()
       ..addEntries(_sampleDetails.entries);
@@ -60,9 +74,89 @@ class MockVaultRepository implements VaultRepository {
   }
 
   @override
+  Future<EntryDetail> createEntry(CreateEntryRequest request) async {
+    final vault = _requireVault();
+    final id = 'entry-${Random().nextInt(99999)}';
+    final detail = EntryDetail(
+      id: id,
+      title: request.title,
+      username: request.username,
+      password: request.password,
+      url: request.url,
+      notes: request.notes,
+      fields: request.customFields,
+    );
+    _details[id] = detail;
+    final summary = EntrySummary(
+      id: id,
+      title: request.title,
+      username: request.username,
+      url: request.url,
+    );
+    // Add to the target group (flattened search)
+    final groups = vault.groupTree.flatten().toList();
+    final target = groups.firstWhere(
+      (g) => g.id == request.groupId,
+      orElse: () =>
+          throw const VaultRepositoryException('Target group not found.'),
+    );
+    target.entries.add(summary);
+    _dirty = true;
+    return detail;
+  }
+
+  @override
+  Future<EntryDetail> updateEntry(UpdateEntryRequest request) async {
+    final existing = _details[request.entryId];
+    if (existing == null) {
+      throw VaultRepositoryException('Entry not found: ${request.entryId}');
+    }
+    final updated = EntryDetail(
+      id: existing.id,
+      title: request.title ?? existing.title,
+      username: request.username ?? existing.username,
+      password: request.password ?? existing.password,
+      url: request.url ?? existing.url,
+      notes: request.notes ?? existing.notes,
+      fields: existing.fields,
+      attachments: existing.attachments,
+    );
+    _details[request.entryId] = updated;
+    _replaceSummaryInTree(request.entryId, updated);
+    _dirty = true;
+    return updated;
+  }
+
+  @override
+  Future<void> deleteEntry(String entryId) async {
+    if (!_details.containsKey(entryId)) {
+      throw VaultRepositoryException('Entry not found: $entryId');
+    }
+    _details.remove(entryId);
+    final vault = _requireVault();
+    for (final group in vault.groupTree.flatten()) {
+      group.entries.removeWhere((e) => e.id == entryId);
+    }
+    _dirty = true;
+  }
+
+  @override
+  Future<bool> isDirty() async => _dirty;
+
+  @override
+  Future<void> save({
+    required String masterPassword,
+    String? keyfilePath,
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    _dirty = false;
+  }
+
+  @override
   Future<void> close() async {
     _vault = null;
     _details.clear();
+    _dirty = false;
   }
 
   OpenedVault _requireVault() {
@@ -71,6 +165,23 @@ class MockVaultRepository implements VaultRepository {
       throw const VaultRepositoryException('No open vault session.');
     }
     return vault;
+  }
+
+  void _replaceSummaryInTree(String entryId, EntryDetail detail) {
+    final vault = _vault;
+    if (vault == null) return;
+    for (final group in vault.groupTree.flatten()) {
+      final idx = group.entries.indexWhere((e) => e.id == entryId);
+      if (idx != -1) {
+        group.entries[idx] = EntrySummary(
+          id: entryId,
+          title: detail.title,
+          username: detail.username,
+          url: detail.url,
+        );
+        return;
+      }
+    }
   }
 }
 
