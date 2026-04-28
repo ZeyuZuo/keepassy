@@ -510,6 +510,60 @@ Run end-to-end checks before closing an integrated milestone:
 - [ ] Lock and reopen.
 - [ ] Confirm no secrets were printed to logs.
 
+## Pre-WebDAV Local Feature Parity
+
+Goal: make KeePassY's local experience solid before opening the WebDAV
+can of worms. These are the most conspicuous gaps vs. a standard
+desktop KeePass client (KeePassXC/KeePass 2) that can be closed with
+moderate effort.
+
+### Group A — User-facing experience blockers
+
+- [ ] **Global search across all groups.** Current search only filters
+  entries within the selected group. Need a vault-wide search that can
+  find entries by title/username/URL/notes across the entire group tree.
+- [ ] **Entry sort.** Entry list currently follows the database's raw
+  order. Add sort controls (by title, username, modification time)
+  so the user can find entries predictably.
+- [ ] **Auto-lock timer.** The vault should lock after a configurable
+  period of user inactivity. This is a security baseline for any
+  password manager.
+
+### Group B — Entry operations that feel missing
+
+- [ ] **Move entry to another group.** The user can only create an
+  entry in one group and can never move it. Need a "move to group"
+  action in the entry context or detail pane.
+- [ ] **Duplicate / clone entry.** Quick way to create a variation of
+  an existing entry.
+- [ ] **Multi-select and bulk delete.** Select several entries in the
+  list and delete them at once.
+
+### Group C — KeePass-native fields not yet exposed
+
+- [ ] **Entry expiry.** KeePass entries have an `expires` flag and
+  expiry date. Expose this in the edit/create UI.
+- [ ] **Password strength indicator.** Show a strength bar when
+  creating/editing/generating a password.
+- [ ] **Group management.** Create, rename, and delete groups. The
+  group tree is currently read-only from the UI side.
+
+### Group D — Database maintenance
+
+- [ ] **Change master password.** User cannot change the database
+  encryption password from within KeePassY.
+- [ ] **Recycle Bin support.** KeePass has a built-in Recycle Bin
+  group. Deletion should move entries there instead of hard-deleting,
+  and the UI should offer restore/empty-bin actions.
+
+### Verification (per group)
+
+- [ ] `flutter analyze` clean, `flutter test` pass.
+- [ ] `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` pass.
+- [ ] End-to-end: open a real KDBX, exercise the new feature, save, reopen, verify.
+
+---
+
 ## Backlog Parking Lot
 
 Do not start these until the corresponding phase is stable:
@@ -522,3 +576,8 @@ Do not start these until the corresponding phase is stable:
 - [ ] Generated bridge migration from JSON FFI.
 - [ ] Multi-vault tabs.
 - [ ] Full text index with encrypted local cache.
+- [ ] TOTP generator (custom-field based).
+- [ ] Auto-type / global hotkey for credential fill.
+- [ ] Entry icon / favicon download.
+- [ ] Entry templates.
+- [ ] Entry field references (`{REF:…}`).

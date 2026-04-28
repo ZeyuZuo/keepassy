@@ -123,6 +123,17 @@ Acceptance:
 - [ ] Advanced features are reachable from entry detail without crowding the primary fields.
 - [ ] Attachment bytes are loaded only when the user requests them.
 
+## Pre-WebDAV Local Parity
+
+Goal: close the most noticeable gaps vs. a standard desktop KeePass
+client before introducing remote-sync complexity.
+
+See `docs/todo.md` → Pre-WebDAV Local Feature Parity for the checklist.
+
+Done when: global search, entry sort, auto-lock, move/duplicate
+entries, group management, entry expiry, and password strength are all
+usable against a real local KDBX.
+
 ## Phase P4: WebDAV End-to-End
 
 Goal: support remote vault open and conflict-safe save.
