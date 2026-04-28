@@ -84,7 +84,7 @@ class GroupNode {
 }
 
 class EntrySummary {
-  const EntrySummary({required this.id, this.title, this.username, this.url});
+  const EntrySummary({required this.id, this.title, this.username, this.url, this.expires = false});
 
   final String id;
   final String? title;
@@ -96,12 +96,15 @@ class EntrySummary {
     return value == null || value.isEmpty ? 'Untitled entry' : value;
   }
 
+  final bool expires;
+
   factory EntrySummary.fromJson(Map<String, Object?> json) {
     return EntrySummary(
       id: json['id'] as String? ?? '',
       title: json['title'] as String?,
       username: json['username'] as String?,
       url: json['url'] as String?,
+      expires: json['expires'] as bool? ?? false,
     );
   }
 }
@@ -114,6 +117,8 @@ class EntryDetail {
     this.url,
     this.password,
     this.notes,
+    this.expires = false,
+    this.expiryTime,
     this.fields = const {},
     this.protectedFields = const [],
     this.attachments = const [],
@@ -125,6 +130,8 @@ class EntryDetail {
   final String? url;
   final String? password;
   final String? notes;
+  final bool expires;
+  final String? expiryTime;
   final Map<String, String> fields;
   final List<String> protectedFields;
   final List<AttachmentSummary> attachments;
@@ -148,6 +155,8 @@ class EntryDetail {
       url: json['url'] as String?,
       password: json['password'] as String?,
       notes: json['notes'] as String?,
+      expires: json['expires'] as bool? ?? false,
+      expiryTime: json['expiry_time'] as String?,
       fields: rawFields.map(
         (key, value) => MapEntry(key, value?.toString() ?? ''),
       ),
