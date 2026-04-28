@@ -84,7 +84,13 @@ class GroupNode {
 }
 
 class EntrySummary {
-  const EntrySummary({required this.id, this.title, this.username, this.url, this.expires = false});
+  const EntrySummary({
+    required this.id,
+    this.title,
+    this.username,
+    this.url,
+    this.expires = false,
+  });
 
   final String id;
   final String? title;
@@ -203,6 +209,8 @@ class CreateEntryRequest {
     this.notes,
     this.customFields = const {},
     this.protectedCustomFields = const [],
+    this.expires = false,
+    this.expiryTime,
   });
 
   final String groupId;
@@ -213,6 +221,8 @@ class CreateEntryRequest {
   final String? notes;
   final Map<String, String> customFields;
   final List<String> protectedCustomFields;
+  final bool expires;
+  final String? expiryTime;
 
   Map<String, Object?> toJson() => {
     'group_id': groupId,
@@ -223,6 +233,8 @@ class CreateEntryRequest {
     'notes': notes,
     'custom_fields': customFields,
     'protected_custom_fields': protectedCustomFields,
+    'expires': expires,
+    'expiry_time': expiryTime,
   };
 }
 
@@ -234,6 +246,8 @@ class UpdateEntryRequest {
     this.password,
     this.url,
     this.notes,
+    this.expires,
+    this.expiryTime,
   });
 
   final String entryId;
@@ -242,6 +256,8 @@ class UpdateEntryRequest {
   final String? password;
   final String? url;
   final String? notes;
+  final bool? expires;
+  final String? expiryTime;
 
   Map<String, Object?> toJson() => {
     'entry_id': entryId,
@@ -250,7 +266,33 @@ class UpdateEntryRequest {
     'password': password,
     'url': url,
     'notes': notes,
+    'expires': expires,
+    'expiry_time': expiryTime,
   };
+}
+
+class MoveEntryRequest {
+  const MoveEntryRequest({required this.entryId, required this.targetGroupId});
+  final String entryId;
+  final String targetGroupId;
+  Map<String, Object?> toJson() => {
+    'entry_id': entryId,
+    'target_group_id': targetGroupId,
+  };
+}
+
+class CreateGroupRequest {
+  const CreateGroupRequest({required this.parentId, required this.name});
+  final String parentId;
+  final String name;
+  Map<String, Object?> toJson() => {'parent_id': parentId, 'name': name};
+}
+
+class RenameGroupRequest {
+  const RenameGroupRequest({required this.groupId, required this.name});
+  final String groupId;
+  final String name;
+  Map<String, Object?> toJson() => {'group_id': groupId, 'name': name};
 }
 
 class HistorySummary {

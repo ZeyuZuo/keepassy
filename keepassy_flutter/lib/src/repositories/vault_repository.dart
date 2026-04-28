@@ -68,6 +68,18 @@ abstract class VaultRepository {
     required String entryId,
     required int index,
   });
+
+  // --- groups ---
+  Future<GroupNode> createGroup({
+    required String parentId,
+    required String name,
+  });
+  Future<GroupNode> renameGroup({
+    required String groupId,
+    required String name,
+  });
+  Future<void> deleteGroup(String groupId);
+  Future<EntryDetail> moveEntry(String entryId, String targetGroupId);
 }
 
 class MockVaultRepository implements VaultRepository {
@@ -347,6 +359,92 @@ class MockVaultRepository implements VaultRepository {
   }) async {
     return _details[entryId] ??
         (throw VaultRepositoryException('Entry not found: $entryId'));
+  }
+
+  // --- groups ---
+  @override
+  Future<GroupNode> createGroup({
+    required String parentId,
+    required String name,
+  }) async {
+    final vault = _requireVault();
+    final parent = vault.groupTree.flatten().firstWhere(
+      (g) => g.id == parentId,
+      orElse: () => throw VaultRepositoryException('Parent group not found'),
+    );
+    final id = 'group-${Random().nextInt(99999)}';
+    final group = GroupNode(id: id, name: name, entries: [], groups: []);
+    parent.groups.add(group);
+    _dirty = true;
+    return group;
+  }
+
+  @override
+  Future<GroupNode> renameGroup({
+    required String groupId,
+    required String name,
+  }) async {
+    final vault = _requireVault();
+    for (final g in vault.groupTree.flatten()) {
+      if (g.id == groupId) {
+        _dirty = true;
+        return GroupNode(
+          id: g.id,
+          name: name,
+          entries: g.entries,
+          groups: g.groups,
+        );
+      }
+    }
+    throw VaultRepositoryException('Group not found: $groupId');
+  }
+
+  @override
+  Future<void> deleteGroup(String groupId) async {
+    final vault = _requireVault();
+    for (final g in vault.groupTree.flatten()) {
+      final idx = g.groups.indexWhere((c) => c.id == groupId);
+      if (idx != -1) {
+        g.groups.removeAt(idx);
+        _dirty = true;
+        return;
+      }
+    }
+    throw VaultRepositoryException('Cannot delete root group');
+  }
+
+  @override
+  Future<EntryDetail> moveEntry(String entryId, String targetGroupId) async {
+    final detail = _details[entryId];
+    if (detail == null) {
+      throw VaultRepositoryException('Entry not found: $entryId');
+    }
+    final vault = _requireVault();
+    bool moved = false;
+    for (final g in vault.groupTree.flatten()) {
+      g.entries.removeWhere((e) {
+        if (e.id == entryId) {
+          moved = true;
+          return true;
+        }
+        return false;
+      });
+    }
+    final target = vault.groupTree.flatten().firstWhere(
+      (g) => g.id == targetGroupId,
+      orElse: () => throw VaultRepositoryException('Target group not found'),
+    );
+    target.entries.add(
+      EntrySummary(
+        id: detail.id,
+        title: detail.title,
+        username: detail.username,
+        url: detail.url,
+      ),
+    );
+    if (!moved) throw VaultRepositoryException('Entry not found in any group');
+    _dirty = true;
+    return detail;
   }
 
   @override

@@ -189,6 +189,21 @@ class FfiVaultRepository implements VaultRepository {
         .lookupFunction<_JsonWithIdAndIntNative, _JsonWithIdAndIntDart>(
           'keepassy_entry_history_detail_json',
         );
+    _moveEntryJson = _lib
+        .lookupFunction<_JsonWithRequestNative, _JsonWithRequestDart>(
+          'keepassy_move_entry_json',
+        );
+    _createGroupJson = _lib
+        .lookupFunction<_JsonWithRequestNative, _JsonWithRequestDart>(
+          'keepassy_create_group_json',
+        );
+    _renameGroupJson = _lib
+        .lookupFunction<_JsonWithRequestNative, _JsonWithRequestDart>(
+          'keepassy_rename_group_json',
+        );
+    _deleteGroupJson = _lib.lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+      'keepassy_delete_group_json',
+    );
   }
 
   final DynamicLibrary _lib;
@@ -211,6 +226,10 @@ class FfiVaultRepository implements VaultRepository {
   late final _JsonWithTwoIdsDart _attachmentBytesJson;
   late final _JsonWithIdDart _entryHistoryJson;
   late final _JsonWithIdAndIntDart _entryHistoryDetailJson;
+  late final _JsonWithRequestDart _moveEntryJson;
+  late final _JsonWithRequestDart _createGroupJson;
+  late final _JsonWithRequestDart _renameGroupJson;
+  late final _JsonWithIdDart _deleteGroupJson;
 
   @override
   Future<OpenedVault> openLocal({
@@ -479,6 +498,71 @@ class FfiVaultRepository implements VaultRepository {
       return EntryDetail.fromJson(json);
     } finally {
       calloc.free(idPtr);
+    }
+  }
+
+  // --- groups ---
+
+  @override
+  Future<GroupNode> createGroup({
+    required String parentId,
+    required String name,
+  }) async {
+    final session = _requireSession();
+    final jsonPtr = jsonEncode(
+      CreateGroupRequest(parentId: parentId, name: name).toJson(),
+    ).toNativeUtf8();
+    try {
+      final result = _createGroupJson(session, jsonPtr);
+      final json = _readJsonObject(result);
+      return GroupNode.fromJson(json);
+    } finally {
+      calloc.free(jsonPtr);
+    }
+  }
+
+  @override
+  Future<GroupNode> renameGroup({
+    required String groupId,
+    required String name,
+  }) async {
+    final session = _requireSession();
+    final jsonPtr = jsonEncode(
+      RenameGroupRequest(groupId: groupId, name: name).toJson(),
+    ).toNativeUtf8();
+    try {
+      final result = _renameGroupJson(session, jsonPtr);
+      final json = _readJsonObject(result);
+      return GroupNode.fromJson(json);
+    } finally {
+      calloc.free(jsonPtr);
+    }
+  }
+
+  @override
+  Future<void> deleteGroup(String groupId) async {
+    final session = _requireSession();
+    final idPtr = groupId.toNativeUtf8();
+    try {
+      final result = _deleteGroupJson(session, idPtr);
+      _readResult(result);
+    } finally {
+      calloc.free(idPtr);
+    }
+  }
+
+  @override
+  Future<EntryDetail> moveEntry(String entryId, String targetGroupId) async {
+    final session = _requireSession();
+    final jsonPtr = jsonEncode(
+      MoveEntryRequest(entryId: entryId, targetGroupId: targetGroupId).toJson(),
+    ).toNativeUtf8();
+    try {
+      final result = _moveEntryJson(session, jsonPtr);
+      final json = _readJsonObject(result);
+      return EntryDetail.fromJson(json);
+    } finally {
+      calloc.free(jsonPtr);
     }
   }
 
