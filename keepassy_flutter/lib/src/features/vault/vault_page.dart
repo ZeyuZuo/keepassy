@@ -46,7 +46,8 @@ class VaultPage extends StatefulWidget {
 }
 
 class _VaultPageState extends State<VaultPage> {
-  late GroupNode _selectedGroup = widget.initialVault.groupTree;
+  late GroupNode _groupTree;
+  late GroupNode _selectedGroup;
   EntrySummary? _selectedEntry;
   EntryDetail? _detail;
   String _query = '';
@@ -54,6 +55,7 @@ class _VaultPageState extends State<VaultPage> {
   bool _passwordVisible = false;
   bool _editing = false;
   bool _editExpires = false;
+  final _editExpiryDateController = TextEditingController();
   bool _dirty = false;
   bool _saving = false;
   String? _saveError;
@@ -61,9 +63,11 @@ class _VaultPageState extends State<VaultPage> {
   List<HistorySummary>? _history;
   bool _loadingHistory = false;
   bool _searchAllGroups = false;
+  int _sortMode = 0; // 0=title, 1=username, 2=modified
   Timer? _autoLockTimer;
   Timer? _inactivityTimer;
   final Set<String> _selectedEntryIds = {};
+  int _autoLockMinutes = 5;
 
   // Edit form controllers
   final _editTitleController = TextEditingController();
@@ -75,6 +79,8 @@ class _VaultPageState extends State<VaultPage> {
   @override
   void initState() {
     super.initState();
+    _groupTree = widget.initialVault.groupTree;
+    _selectedGroup = _groupTree;
     if (_selectedGroup.entries.isNotEmpty) {
       _selectEntry(_selectedGroup.entries.first);
     }
@@ -83,7 +89,7 @@ class _VaultPageState extends State<VaultPage> {
 
   void _resetInactivityTimer() {
     _inactivityTimer?.cancel();
-    _inactivityTimer = Timer(const Duration(minutes: 5), _autoLock);
+    _inactivityTimer = Timer(Duration(minutes: _autoLockMinutes), _autoLock);
   }
 
   void _autoLock() {
@@ -111,6 +117,7 @@ class _VaultPageState extends State<VaultPage> {
     _editPasswordController.dispose();
     _editUrlController.dispose();
     _editNotesController.dispose();
+    _editExpiryDateController.dispose();
     super.dispose();
   }
 
@@ -176,6 +183,7 @@ class _VaultPageState extends State<VaultPage> {
     _editUrlController.text = detail.url ?? '';
     _editNotesController.text = detail.notes ?? '';
     _editExpires = detail.expires;
+    _editExpiryDateController.text = detail.expiryTime ?? '';
     setState(() => _editing = true);
   }
 
@@ -208,6 +216,7 @@ class _VaultPageState extends State<VaultPage> {
           ? ''
           : _editNotesController.text.trim(),
       expires: _editExpires,
+      expiryTime: _editExpires ? _editExpiryDateController.text.trim() : null,
     );
 
     try {
@@ -838,7 +847,7 @@ class _VaultPageState extends State<VaultPage> {
     widget.repository.entriesForGroup(groupId).then((entries) {
       if (!mounted) return;
       setState(() {
-        final groups = widget.initialVault.groupTree.flatten().toList();
+        final groups = _groupTree.flatten().toList();
         final group = groups.firstWhere(
           (g) => g.id == groupId,
           orElse: () => _selectedGroup,
@@ -876,21 +885,15 @@ class _VaultPageState extends State<VaultPage> {
     ctrl.dispose();
     if (name == null || name.isEmpty) return;
     try {
-      await widget.repository.createGroup(
+      final group = await widget.repository.createGroup(
         parentId: _selectedGroup.id,
         name: name,
       );
       if (!mounted) return;
-      setState(() => _dirty = true);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => VaultPage(
-            repository: widget.repository,
-            initialVault: widget.initialVault,
-            keyfilePath: widget.keyfilePath,
-          ),
-        ),
-      );
+      setState(() {
+        _dirty = true;
+        _selectedGroup.groups.add(group);
+      });
     } on Object catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -927,16 +930,15 @@ class _VaultPageState extends State<VaultPage> {
     try {
       await widget.repository.renameGroup(groupId: group.id, name: name);
       if (!mounted) return;
-      setState(() => _dirty = true);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => VaultPage(
-            repository: widget.repository,
-            initialVault: widget.initialVault,
-            keyfilePath: widget.keyfilePath,
-          ),
-        ),
-      );
+      setState(() {
+        _dirty = true;
+        for (final g in _groupTree.flatten()) {
+          if (g.id == group.id) {
+            g.name = name;
+            break;
+          }
+        }
+      });
     } on Object catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -971,10 +973,15 @@ class _VaultPageState extends State<VaultPage> {
     try {
       await widget.repository.deleteGroup(group.id);
       if (!mounted) return;
-      setState(() => _dirty = true);
-      _selectedGroup = widget.initialVault.groupTree;
-      _selectedEntry = null;
-      _detail = null;
+      setState(() {
+        _dirty = true;
+        for (final g in _groupTree.flatten()) {
+          g.groups.removeWhere((c) => c.id == group.id);
+        }
+        _selectedGroup = _groupTree;
+        _selectedEntry = null;
+        _detail = null;
+      });
     } on Object catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -986,7 +993,7 @@ class _VaultPageState extends State<VaultPage> {
   Future<void> _moveEntryDialog() async {
     final entry = _selectedEntry;
     if (entry == null) return;
-    final groups = widget.initialVault.groupTree.flatten().toList();
+    final groups = _groupTree.flatten().toList();
     final target = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
@@ -1151,6 +1158,7 @@ class _VaultPageState extends State<VaultPage> {
     final formKey = GlobalKey<FormState>();
     final customFields = <_FieldEntry>[];
     bool createExpires = false;
+    final expiryDateCtrl = TextEditingController();
 
     showDialog<void>(
       context: context,
@@ -1259,6 +1267,14 @@ class _VaultPageState extends State<VaultPage> {
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                     ),
+                    if (createExpires)
+                      TextFormField(
+                        controller: expiryDateCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Expiry date (YYYY-MM-DD)',
+                        ),
+                        textInputAction: TextInputAction.next,
+                      ),
                     const SizedBox(height: 18),
                     Row(
                       children: [
@@ -1378,6 +1394,9 @@ class _VaultPageState extends State<VaultPage> {
                     customFields: fields,
                     protectedCustomFields: protectedKeys,
                     expires: createExpires,
+                    expiryTime: createExpires
+                        ? expiryDateCtrl.text.trim()
+                        : null,
                   ),
                 );
               },
@@ -1391,11 +1410,8 @@ class _VaultPageState extends State<VaultPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Reset inactivity timer on build (user interaction)
-    _resetInactivityTimer();
-
     final searchGroups = _searchAllGroups
-        ? widget.initialVault.groupTree.flatten().toList()
+        ? _groupTree.flatten().toList()
         : [_selectedGroup];
     final entries = searchGroups.expand((g) => g.entries).where((entry) {
       if (_query.isEmpty) return true;
@@ -1403,84 +1419,157 @@ class _VaultPageState extends State<VaultPage> {
         entry.title,
         entry.username,
         entry.url,
+        entry.notes,
       ].whereType<String>().join(' ').toLowerCase();
       return haystack.contains(_query.toLowerCase());
-    }).toList()..sort((a, b) => (a.displayTitle).compareTo(b.displayTitle));
+    }).toList();
+    switch (_sortMode) {
+      case 0:
+        entries.sort((a, b) => a.displayTitle.compareTo(b.displayTitle));
+      case 1:
+        entries.sort((a, b) => (a.username ?? '').compareTo(b.username ?? ''));
+      case 2:
+        entries.sort(
+          (a, b) => (b.lastModified ?? '').compareTo(a.lastModified ?? ''),
+        );
+    }
 
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 20,
-        title: Row(
-          children: [
-            const Icon(Icons.lock_outline),
-            const SizedBox(width: 10),
-            const Text('KeePassY'),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Text(
-                widget.initialVault.source,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          if (_selectedEntryIds.isNotEmpty)
-            IconButton(
-              tooltip: 'Delete selected (${_selectedEntryIds.length})',
-              onPressed: _bulkDelete,
-              icon: Icon(
-                Icons.delete_sweep,
-                color: Theme.of(context).colorScheme.error,
-              ),
-            ),
-          IconButton(
-            tooltip: 'Change master password',
-            onPressed: _changePasswordDialog,
-            icon: const Icon(Icons.vpn_key_outlined),
-          ),
-          IconButton(
-            tooltip: 'Create entry',
-            onPressed: _showCreateDialog,
-            icon: const Icon(Icons.add),
-          ),
-          _SaveButton(
-            dirty: _dirty,
-            saving: _saving,
-            error: _saveError,
-            onPressed: _saveVault,
-          ),
-          IconButton(
-            tooltip: 'Lock vault',
-            onPressed: _lock,
-            icon: const Icon(Icons.lock_outline),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 920;
-          if (compact) {
-            return Column(
-              children: [
-                SizedBox(
-                  height: 168,
-                  child: _GroupRail(
-                    root: widget.initialVault.groupTree,
-                    selectedGroup: _selectedGroup,
-                    horizontal: true,
-                    onSelected: _selectGroup,
-                    onCreateGroup: _createGroupDialog,
-                    onRenameGroup: _renameGroupDialog,
-                    onDeleteGroup: _deleteGroupDialog,
+    return Listener(
+      onPointerDown: (_) => _resetInactivityTimer(),
+      child: Scaffold(
+        appBar: AppBar(
+          titleSpacing: 20,
+          title: Row(
+            children: [
+              const Icon(Icons.lock_outline),
+              const SizedBox(width: 10),
+              const Text('KeePassY'),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Text(
+                  widget.initialVault.source,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const Divider(),
-                Expanded(
+              ),
+            ],
+          ),
+          actions: [
+            if (_selectedEntryIds.isNotEmpty)
+              IconButton(
+                tooltip: 'Delete selected (${_selectedEntryIds.length})',
+                onPressed: _bulkDelete,
+                icon: Icon(
+                  Icons.delete_sweep,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            IconButton(
+              tooltip: 'Change master password',
+              onPressed: _changePasswordDialog,
+              icon: const Icon(Icons.vpn_key_outlined),
+            ),
+            IconButton(
+              tooltip: 'Create entry',
+              onPressed: _showCreateDialog,
+              icon: const Icon(Icons.add),
+            ),
+            _SaveButton(
+              dirty: _dirty,
+              saving: _saving,
+              error: _saveError,
+              onPressed: _saveVault,
+            ),
+            IconButton(
+              tooltip: 'Auto-lock settings',
+              onPressed: _showAutoLockConfig,
+              icon: const Icon(Icons.timer_outlined),
+            ),
+            IconButton(
+              tooltip: 'Lock vault',
+              onPressed: _lock,
+              icon: const Icon(Icons.lock_outline),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 920;
+            if (compact) {
+              return Column(
+                children: [
+                  SizedBox(
+                    height: 168,
+                    child: _GroupRail(
+                      root: _groupTree,
+                      selectedGroup: _selectedGroup,
+                      horizontal: true,
+                      onSelected: _selectGroup,
+                      onCreateGroup: _createGroupDialog,
+                      onRenameGroup: _renameGroupDialog,
+                      onDeleteGroup: _deleteGroupDialog,
+                    ),
+                  ),
+                  const Divider(),
+                  Expanded(
+                    child: _EntryList(
+                      group: _selectedGroup,
+                      entries: entries,
+                      selectedEntry: _selectedEntry,
+                      query: _query,
+                      onQueryChanged: (value) => setState(() => _query = value),
+                      onSelected: _selectEntry,
+                    ),
+                  ),
+                  const Divider(),
+                  SizedBox(
+                    height: 340,
+                    child: _DetailPane(
+                      detail: _detail,
+                      loading: _loadingDetail,
+                      passwordVisible: _passwordVisible,
+                      editing: _editing,
+                      titleCtrl: _editTitleController,
+                      usernameCtrl: _editUsernameController,
+                      passwordCtrl: _editPasswordController,
+                      urlCtrl: _editUrlController,
+                      notesCtrl: _editNotesController,
+                      onPasswordVisibilityChanged: () {
+                        setState(() => _passwordVisible = !_passwordVisible);
+                      },
+                      onEdit: _startEdit,
+                      onSaveEdit: _saveEdit,
+                      onCancelEdit: _cancelEdit,
+                      onDelete: _deleteEntry,
+                      onGeneratePassword: _showPasswordGenerator,
+                      onDownloadAttachment: _downloadAttachment,
+                      onAddAttachment: _addAttachment,
+                      onRemoveAttachment: _removeAttachment,
+                      onAddCustomField: _addCustomField,
+                      onRemoveCustomField: _removeCustomField,
+                      selectedEntry: _selectedEntry,
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                SizedBox(
+                  width: 264,
+                  child: _GroupRail(
+                    root: _groupTree,
+                    selectedGroup: _selectedGroup,
+                    onSelected: _selectGroup,
+                  ),
+                ),
+                const VerticalDivider(width: 1),
+                SizedBox(
+                  width: 380,
                   child: _EntryList(
                     group: _selectedGroup,
                     entries: entries,
@@ -1488,11 +1577,21 @@ class _VaultPageState extends State<VaultPage> {
                     query: _query,
                     onQueryChanged: (value) => setState(() => _query = value),
                     onSelected: _selectEntry,
+                    searchAllGroups: _searchAllGroups,
+                    onSearchAllGroupsChanged: (v) =>
+                        setState(() => _searchAllGroups = v),
+                    selectedEntryIds: _selectedEntryIds,
+                    onToggleSelect: (id) => setState(
+                      () => _selectedEntryIds.contains(id)
+                          ? _selectedEntryIds.remove(id)
+                          : _selectedEntryIds.add(id),
+                    ),
+                    sortMode: _sortMode,
+                    onSortModeChanged: (v) => setState(() => _sortMode = v),
                   ),
                 ),
-                const Divider(),
-                SizedBox(
-                  height: 340,
+                const VerticalDivider(width: 1),
+                Expanded(
                   child: _DetailPane(
                     detail: _detail,
                     loading: _loadingDetail,
@@ -1516,85 +1615,55 @@ class _VaultPageState extends State<VaultPage> {
                     onRemoveAttachment: _removeAttachment,
                     onAddCustomField: _addCustomField,
                     onRemoveCustomField: _removeCustomField,
+                    onToggleCustomFieldProtect: _toggleCustomFieldProtect,
+                    onToggleHistory: _loadHistory,
+                    onViewHistoryDetail: _viewHistoryDetail,
+                    onMoveEntry: _moveEntryDialog,
+                    onDuplicateEntry: _duplicateEntry,
+                    editExpires: _editExpires,
+                    onEditExpiresChanged: (v) =>
+                        setState(() => _editExpires = v),
+                    editExpiryDateCtrl: _editExpiryDateController,
+                    showHistory: _showHistory,
+                    history: _history,
+                    loadingHistory: _loadingHistory,
                     selectedEntry: _selectedEntry,
                   ),
                 ),
               ],
             );
-          }
+          },
+        ),
+      ),
+    );
+  }
 
-          return Row(
-            children: [
-              SizedBox(
-                width: 264,
-                child: _GroupRail(
-                  root: widget.initialVault.groupTree,
-                  selectedGroup: _selectedGroup,
-                  onSelected: _selectGroup,
-                ),
-              ),
-              const VerticalDivider(width: 1),
-              SizedBox(
-                width: 380,
-                child: _EntryList(
-                  group: _selectedGroup,
-                  entries: entries,
-                  selectedEntry: _selectedEntry,
-                  query: _query,
-                  onQueryChanged: (value) => setState(() => _query = value),
-                  onSelected: _selectEntry,
-                  searchAllGroups: _searchAllGroups,
-                  onSearchAllGroupsChanged: (v) =>
-                      setState(() => _searchAllGroups = v),
-                  selectedEntryIds: _selectedEntryIds,
-                  onToggleSelect: (id) => setState(
-                    () => _selectedEntryIds.contains(id)
-                        ? _selectedEntryIds.remove(id)
-                        : _selectedEntryIds.add(id),
-                  ),
-                ),
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(
-                child: _DetailPane(
-                  detail: _detail,
-                  loading: _loadingDetail,
-                  passwordVisible: _passwordVisible,
-                  editing: _editing,
-                  titleCtrl: _editTitleController,
-                  usernameCtrl: _editUsernameController,
-                  passwordCtrl: _editPasswordController,
-                  urlCtrl: _editUrlController,
-                  notesCtrl: _editNotesController,
-                  onPasswordVisibilityChanged: () {
-                    setState(() => _passwordVisible = !_passwordVisible);
-                  },
-                  onEdit: _startEdit,
-                  onSaveEdit: _saveEdit,
-                  onCancelEdit: _cancelEdit,
-                  onDelete: _deleteEntry,
-                  onGeneratePassword: _showPasswordGenerator,
-                  onDownloadAttachment: _downloadAttachment,
-                  onAddAttachment: _addAttachment,
-                  onRemoveAttachment: _removeAttachment,
-                  onAddCustomField: _addCustomField,
-                  onRemoveCustomField: _removeCustomField,
-                  onToggleCustomFieldProtect: _toggleCustomFieldProtect,
-                  onToggleHistory: _loadHistory,
-                  onViewHistoryDetail: _viewHistoryDetail,
-                  onMoveEntry: _moveEntryDialog,
-                  onDuplicateEntry: _duplicateEntry,
-                  editExpires: _editExpires,
-                  onEditExpiresChanged: (v) => setState(() => _editExpires = v),
-                  showHistory: _showHistory,
-                  history: _history,
-                  loadingHistory: _loadingHistory,
-                  selectedEntry: _selectedEntry,
-                ),
-              ),
-            ],
-          );
-        },
+  void _showAutoLockConfig() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Auto-lock timer'),
+        content: DropdownButtonFormField<int>(
+          initialValue: _autoLockMinutes,
+          decoration: const InputDecoration(labelText: 'Lock after inactivity'),
+          items: const [
+            DropdownMenuItem(value: 1, child: Text('1 minute')),
+            DropdownMenuItem(value: 5, child: Text('5 minutes')),
+            DropdownMenuItem(value: 15, child: Text('15 minutes')),
+            DropdownMenuItem(value: 30, child: Text('30 minutes')),
+            DropdownMenuItem(value: 0, child: Text('Never')),
+          ],
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() => _autoLockMinutes = v);
+            Navigator.pop(ctx);
+            if (v == 0) {
+              _inactivityTimer?.cancel();
+            } else {
+              _resetInactivityTimer();
+            }
+          },
+        ),
       ),
     );
   }
@@ -1853,6 +1922,8 @@ class _EntryList extends StatelessWidget {
     this.onSearchAllGroupsChanged,
     this.selectedEntryIds = const {},
     this.onToggleSelect,
+    this.sortMode = 0,
+    this.onSortModeChanged,
   });
 
   final GroupNode group;
@@ -1865,6 +1936,8 @@ class _EntryList extends StatelessWidget {
   final ValueChanged<bool>? onSearchAllGroupsChanged;
   final Set<String> selectedEntryIds;
   final void Function(String)? onToggleSelect;
+  final int sortMode;
+  final ValueChanged<int>? onSortModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1930,6 +2003,35 @@ class _EntryList extends StatelessWidget {
             ],
           ),
         ),
+        if (onSortModeChanged != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+            child: Row(
+              children: [
+                const Text('Sort: ', style: TextStyle(fontSize: 12)),
+                DropdownButton<int>(
+                  value: sortMode,
+                  isDense: true,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 0,
+                      child: Text('Title', style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: 1,
+                      child: Text('Username', style: TextStyle(fontSize: 12)),
+                    ),
+                    DropdownMenuItem(
+                      value: 2,
+                      child: Text('Modified', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                  onChanged: (v) => onSortModeChanged!(v ?? 0),
+                ),
+              ],
+            ),
+          ),
         const Divider(),
         Expanded(
           child: entries.isEmpty
@@ -2066,6 +2168,7 @@ class _DetailPane extends StatelessWidget {
     this.onDuplicateEntry,
     this.editExpires = false,
     this.onEditExpiresChanged,
+    this.editExpiryDateCtrl,
     this.showHistory = false,
     this.history,
     this.loadingHistory = false,
@@ -2099,6 +2202,7 @@ class _DetailPane extends StatelessWidget {
   final VoidCallback? onDuplicateEntry;
   final bool editExpires;
   final ValueChanged<bool>? onEditExpiresChanged;
+  final TextEditingController? editExpiryDateCtrl;
   final bool showHistory;
   final List<HistorySummary>? history;
   final bool loadingHistory;
@@ -2404,6 +2508,13 @@ class _DetailPane extends StatelessWidget {
             onChanged: (v) => onEditExpiresChanged!(v ?? false),
             dense: true,
             contentPadding: EdgeInsets.zero,
+          ),
+        if (editExpires && editExpiryDateCtrl != null)
+          TextField(
+            controller: editExpiryDateCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Expiry date (YYYY-MM-DD)',
+            ),
           ),
         // Custom fields
         if (detail != null) ...[

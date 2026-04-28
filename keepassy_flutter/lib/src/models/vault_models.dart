@@ -41,7 +41,7 @@ class RemoteMetadata {
 }
 
 class GroupNode {
-  const GroupNode({
+  GroupNode({
     required this.id,
     required this.name,
     required this.entries,
@@ -49,7 +49,7 @@ class GroupNode {
   });
 
   final String id;
-  final String name;
+  String name;
   final List<EntrySummary> entries;
   final List<GroupNode> groups;
 
@@ -90,19 +90,22 @@ class EntrySummary {
     this.username,
     this.url,
     this.expires = false,
+    this.notes,
+    this.lastModified,
   });
 
   final String id;
   final String? title;
   final String? username;
   final String? url;
+  final bool expires;
+  final String? notes;
+  final String? lastModified;
 
   String get displayTitle {
     final value = title?.trim();
     return value == null || value.isEmpty ? 'Untitled entry' : value;
   }
-
-  final bool expires;
 
   factory EntrySummary.fromJson(Map<String, Object?> json) {
     return EntrySummary(
@@ -111,6 +114,8 @@ class EntrySummary {
       username: json['username'] as String?,
       url: json['url'] as String?,
       expires: json['expires'] as bool? ?? false,
+      notes: json['notes'] as String?,
+      lastModified: json['last_modified'] as String?,
     );
   }
 }

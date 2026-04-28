@@ -5,7 +5,7 @@ import 'package:keepassy_flutter/src/repositories/vault_repository.dart';
 
 void main() {
   test('group entry count only includes direct entries', () {
-    const group = GroupNode(
+    final group = GroupNode(
       id: 'root',
       name: 'Database',
       entries: [EntrySummary(id: 'root-entry')],
