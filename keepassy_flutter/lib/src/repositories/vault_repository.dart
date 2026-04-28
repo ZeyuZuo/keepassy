@@ -197,7 +197,7 @@ class VaultRepositoryException implements Exception {
 OpenedVault _sampleVault(String source) {
   return OpenedVault(
     source: source,
-    groupTree: const GroupNode(
+    groupTree: GroupNode(
       id: 'root',
       name: 'Database',
       entries: [
@@ -252,7 +252,7 @@ OpenedVault _sampleVault(String source) {
   );
 }
 
-const _sampleDetails = <String, EntryDetail>{
+final _sampleDetails = <String, EntryDetail>{
   'entry-github': EntryDetail(
     id: 'entry-github',
     title: 'GitHub',

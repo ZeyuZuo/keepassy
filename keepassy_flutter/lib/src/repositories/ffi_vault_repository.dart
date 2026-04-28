@@ -86,10 +86,12 @@ DynamicLibrary _loadLibrary() {
   }
 
   final cwd = Directory.current.path;
-  for (final name in libNames) {
-    final candidate = '$cwd/keepass-rs/target/debug/$name';
-    if (File(candidate).existsSync()) {
-      return DynamicLibrary.open(candidate);
+  for (final dir in [cwd, '$cwd/..']) {
+    for (final name in libNames) {
+      final candidate = '$dir/keepass-rs/target/debug/$name';
+      if (File(candidate).existsSync()) {
+        return DynamicLibrary.open(candidate);
+      }
     }
   }
 
