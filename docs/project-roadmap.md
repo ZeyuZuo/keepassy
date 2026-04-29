@@ -134,6 +134,10 @@ Done when: global search, entry sort, auto-lock, move/duplicate
 entries, group management, entry expiry, and password strength are all
 usable against a real local KDBX.
 
+Status: done except Recycle Bin support, which is deferred to a dedicated
+future feature because it requires persistent original-group tracking inside
+the KeePass database.
+
 ## Phase P4: WebDAV End-to-End
 
 Goal: support remote vault open and conflict-safe save.
@@ -194,13 +198,13 @@ Acceptance:
 
 ## Recommended Next Sprint
 
-Sprint goal: local read-only end-to-end.
+Sprint goal: WebDAV end-to-end.
 
-1. Build `keepass_ffi` as a Linux `.so`.
-2. Add `FfiVaultRepository` in Flutter.
-3. Bind open, close, free string, group tree, entries, and entry detail.
-4. Replace mock repository in the app entry behind a simple development switch.
-5. Open a real `.kdbx` from Flutter and browse it.
+1. Add `keepassy_open_webdav` or an equivalent JSON FFI wrapper.
+2. Define the WebDAV open request JSON for URL, credentials, and optional keyfile.
+3. Expose remote metadata and distinct conflict errors through the FFI boundary.
+4. Add the Flutter WebDAV unlock flow behind the repository interface.
+5. Add save conflict UX: retry, reload from remote, and keep local edits.
 
 Run backend checks:
 

@@ -20,11 +20,17 @@ and keep frontend design rules in `keepassy_flutter/docs/frontend.md`.
 
 ## Current Priority
 
-Current sprint: Phase P1, local read-only end-to-end.
+Current sprint: Phase P4, WebDAV end-to-end.
 
-The next meaningful milestone is opening a real local `.kdbx` from Flutter,
-reading the group tree through Rust FFI, selecting entries, and closing the Rust
-session when the vault is locked.
+Pre-WebDAV local feature parity is complete enough to proceed: global search,
+entry sort, auto-lock, move/duplicate entries, bulk delete, group management,
+entry expiry, password strength, and change-master-password are implemented.
+Recycle Bin support is intentionally deferred because tracking original entry
+group metadata inside the KeePass database should be handled as a separate
+feature.
+
+The next meaningful milestone is opening and saving a WebDAV-hosted `.kdbx`
+from Flutter through Rust FFI, with clear remote metadata and conflict handling.
 
 ## Phase P0: Baseline and Documentation
 
@@ -513,48 +519,54 @@ Run end-to-end checks before closing an integrated milestone:
 ## Pre-WebDAV Local Feature Parity
 
 Goal: make KeePassY's local experience solid before opening the WebDAV
-can of worms. These are the most conspicuous gaps vs. a standard
+sync work. These are the most conspicuous gaps vs. a standard
 desktop KeePass client (KeePassXC/KeePass 2) that can be closed with
 moderate effort.
 
+Status: done except Recycle Bin support, which is deferred to a dedicated
+future feature because it needs persistent original-group tracking in the
+KeePass database.
+
 ### Group A — User-facing experience blockers
 
-- [ ] **Global search across all groups.** Current search only filters
+- [x] **Global search across all groups.** Current search only filters
   entries within the selected group. Need a vault-wide search that can
   find entries by title/username/URL/notes across the entire group tree.
-- [ ] **Entry sort.** Entry list currently follows the database's raw
+- [x] **Entry sort.** Entry list currently follows the database's raw
   order. Add sort controls (by title, username, modification time)
   so the user can find entries predictably.
-- [ ] **Auto-lock timer.** The vault should lock after a configurable
+- [x] **Auto-lock timer.** The vault should lock after a configurable
   period of user inactivity. This is a security baseline for any
   password manager.
 
 ### Group B — Entry operations that feel missing
 
-- [ ] **Move entry to another group.** The user can only create an
+- [x] **Move entry to another group.** The user can only create an
   entry in one group and can never move it. Need a "move to group"
   action in the entry context or detail pane.
-- [ ] **Duplicate / clone entry.** Quick way to create a variation of
+- [x] **Duplicate / clone entry.** Quick way to create a variation of
   an existing entry.
-- [ ] **Multi-select and bulk delete.** Select several entries in the
+- [x] **Multi-select and bulk delete.** Select several entries in the
   list and delete them at once.
 
 ### Group C — KeePass-native fields not yet exposed
 
-- [ ] **Entry expiry.** KeePass entries have an `expires` flag and
+- [x] **Entry expiry.** KeePass entries have an `expires` flag and
   expiry date. Expose this in the edit/create UI.
-- [ ] **Password strength indicator.** Show a strength bar when
+- [x] **Password strength indicator.** Show a strength bar when
   creating/editing/generating a password.
-- [ ] **Group management.** Create, rename, and delete groups. The
+- [x] **Group management.** Create, rename, and delete groups. The
   group tree is currently read-only from the UI side.
 
 ### Group D — Database maintenance
 
-- [ ] **Change master password.** User cannot change the database
+- [x] **Change master password.** User cannot change the database
   encryption password from within KeePassY.
-- [ ] **Recycle Bin support.** KeePass has a built-in Recycle Bin
+- [ ] **Recycle Bin support — deferred.** KeePass has a built-in Recycle Bin
   group. Deletion should move entries there instead of hard-deleting,
-  and the UI should offer restore/empty-bin actions.
+  and the UI should offer restore/empty-bin actions. This remains parked
+  because reliable restore needs original-group metadata tracked in the
+  KeePass database.
 
 ### Verification (per group)
 
