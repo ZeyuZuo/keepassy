@@ -11,6 +11,18 @@ class OpenedVault {
   final RemoteMetadata? metadata;
   final GroupNode groupTree;
 
+  OpenedVault copyWith({
+    String? source,
+    RemoteMetadata? metadata,
+    GroupNode? groupTree,
+  }) {
+    return OpenedVault(
+      source: source ?? this.source,
+      metadata: metadata ?? this.metadata,
+      groupTree: groupTree ?? this.groupTree,
+    );
+  }
+
   factory OpenedVault.fromJson(Map<String, Object?> json) {
     return OpenedVault(
       source: json['source'] as String? ?? '',

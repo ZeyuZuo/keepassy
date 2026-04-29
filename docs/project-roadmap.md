@@ -144,21 +144,21 @@ Goal: support remote vault open and conflict-safe save.
 
 Backend tasks:
 
-- [ ] Expose WebDAV open through FFI.
-- [ ] Expose WebDAV save conflict details through stable error mapping.
-- [ ] Test ETag conflict handling against a local test server or mock server.
+- [x] Expose WebDAV open through FFI.
+- [x] Expose WebDAV save conflict details through stable error mapping.
+- [x] Test ETag conflict handling against a local test server or mock server.
 
 Frontend tasks:
 
-- [ ] Add WebDAV open flow.
-- [ ] Add remote metadata display.
-- [ ] Add conflict UI for remote save failures.
-- [ ] Add retry, reload, and cancel choices for remote conflicts.
+- [x] Add WebDAV open flow.
+- [x] Add remote metadata display.
+- [x] Add conflict UI for remote save failures.
+- [x] Add retry, reload, and cancel choices for remote conflicts.
 
 Acceptance:
 
-- [ ] User can open and save a WebDAV vault.
-- [ ] Remote conflicts never silently overwrite server data.
+- [x] User can open and save a WebDAV vault.
+- [x] Remote conflicts never silently overwrite server data.
 
 ## Phase P5: Desktop Release Quality
 
@@ -198,13 +198,13 @@ Acceptance:
 
 ## Recommended Next Sprint
 
-Sprint goal: WebDAV end-to-end.
+Sprint goal: desktop release quality.
 
-1. Add `keepassy_open_webdav` or an equivalent JSON FFI wrapper.
-2. Define the WebDAV open request JSON for URL, credentials, and optional keyfile.
-3. Expose remote metadata and distinct conflict errors through the FFI boundary.
-4. Add the Flutter WebDAV unlock flow behind the repository interface.
-5. Add save conflict UX: retry, reload from remote, and keep local edits.
+1. Define the release artifact layout for the Rust shared library.
+2. Bundle `libkeepass_ffi.so` with the Flutter Linux build.
+3. Add app icon, desktop metadata, and startup checks.
+4. Verify local and WebDAV smoke tests against a release build.
+5. Audit startup/runtime errors for clear, secret-safe messages.
 
 Run backend checks:
 

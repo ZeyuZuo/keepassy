@@ -10,6 +10,8 @@ import '../../models/vault_models.dart';
 import '../../repositories/vault_repository.dart';
 import '../unlock/unlock_page.dart';
 
+enum _RemoteConflictAction { keepLocal, reopenRemote }
+
 double _pwStrength(String pw) {
   if (pw.isEmpty) return 0;
   double score = 0;
@@ -398,10 +400,83 @@ class _VaultPageState extends State<VaultPage> {
         _saving = false;
         _saveError = err.toString();
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Save failed: $err')));
+      if (_isRemoteConflict(err)) {
+        await _showRemoteConflictDialog(err.toString());
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $err')));
+      }
     }
+  }
+
+  bool _isRemoteConflict(Object err) {
+    final text = err.toString().toLowerCase();
+    return text.contains('remote database has been modified') ||
+        text.contains('conflict');
+  }
+
+  Future<void> _showRemoteConflictDialog(String message) async {
+    final action = await showDialog<_RemoteConflictAction>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remote save conflict'),
+        content: Text(
+          '$message\n\nYour local edits are still open and unsaved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop(_RemoteConflictAction.keepLocal),
+            child: const Text('Keep local edits'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(context).pop(_RemoteConflictAction.reopenRemote),
+            child: const Text('Reopen remote'),
+          ),
+        ],
+      ),
+    );
+
+    if (action == _RemoteConflictAction.reopenRemote) {
+      await widget.repository.close();
+      if (!mounted) return;
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => UnlockPage(repository: widget.repository),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showRemoteMetadata() async {
+    final metadata = widget.initialVault.metadata;
+    if (metadata == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remote metadata'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _MetadataLine(label: 'ETag', value: metadata.etag),
+            _MetadataLine(label: 'Last-Modified', value: metadata.lastModified),
+            _MetadataLine(
+              label: 'Content-Length',
+              value: metadata.contentLength?.toString(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showPasswordGenerator(void Function(String) onAccept) {
@@ -1497,6 +1572,12 @@ class _VaultPageState extends State<VaultPage> {
                   color: Theme.of(context).colorScheme.error,
                 ),
               ),
+            if (widget.initialVault.metadata != null)
+              IconButton(
+                tooltip: 'Remote metadata',
+                onPressed: _showRemoteMetadata,
+                icon: const Icon(Icons.cloud_done_outlined),
+              ),
             IconButton(
               tooltip: 'Change master password',
               onPressed: _changePasswordDialog,
@@ -1747,6 +1828,38 @@ class _SaveButton extends StatelessWidget {
             : dirty
             ? Theme.of(context).colorScheme.primary
             : null,
+      ),
+    );
+  }
+}
+
+class _MetadataLine extends StatelessWidget {
+  const _MetadataLine({required this.label, required this.value});
+
+  final String label;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 112,
+            child: Text(
+              label,
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value?.isNotEmpty == true ? value! : 'Unavailable',
+            ),
+          ),
+        ],
       ),
     );
   }

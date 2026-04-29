@@ -341,55 +341,55 @@ Goal: open and save remote vaults with visible conflict handling.
 
 ### P4.1 Backend WebDAV FFI
 
-- [ ] Add `keepassy_open_webdav` or equivalent FFI wrapper.
-- [ ] Define JSON request shape for WebDAV URL and credentials.
-- [ ] Support optional keyfile path or bytes consistently with local open.
-- [ ] Ensure credentials do not appear in debug output or errors.
-- [ ] Expose remote metadata in snapshot.
-- [ ] Expose conflict errors distinctly enough for UI.
-- [ ] Add FFI tests with mocked HTTP/WebDAV server where practical.
+- [x] Add `keepassy_open_webdav` or equivalent FFI wrapper.
+- [x] Define JSON request shape for WebDAV URL and credentials.
+- [x] Support optional keyfile path or bytes consistently with local open.
+- [x] Ensure credentials do not appear in debug output or errors.
+- [x] Expose remote metadata in snapshot.
+- [x] Expose conflict errors distinctly enough for UI.
+- [x] Add FFI tests with mocked HTTP/WebDAV server where practical.
 
 Done when:
 
-- [ ] Flutter can call WebDAV open without adding WebDAV logic to Dart.
+- [x] Flutter can call WebDAV open without adding WebDAV logic to Dart.
 
 ### P4.2 Frontend Remote Open Flow
 
-- [ ] Add source selector:
+- [x] Add source selector:
   - local file
   - WebDAV
-- [ ] Add WebDAV URL field.
-- [ ] Add WebDAV username field.
-- [ ] Add WebDAV password field.
-- [ ] Add optional keyfile picker for remote vault.
-- [ ] Validate URL format before repository call.
-- [ ] Keep credentials scoped to the unlock action/session.
+- [x] Add WebDAV URL field.
+- [x] Add WebDAV username field.
+- [x] Add WebDAV password field.
+- [x] Add optional keyfile picker for remote vault.
+- [x] Validate URL format before repository call.
+- [x] Keep credentials scoped to the unlock action/session.
 
 Done when:
 
-- [ ] Remote unlock UI is clear and separate from local file selection.
+- [x] Remote unlock UI is clear and separate from local file selection.
 
 ### P4.3 Sync and Conflict UX
 
-- [ ] Display remote metadata when available:
+- [x] Display remote metadata when available:
   - ETag
   - Last-Modified
   - Content-Length
-- [ ] Add save conflict state.
-- [ ] Add reload from remote action.
-- [ ] Add retry save action.
-- [ ] Add cancel/keep local edits action.
-- [ ] Never silently overwrite remote conflicts.
+- [x] Add save conflict state.
+- [x] Add reload from remote action.
+- [x] Add retry save action.
+- [x] Add cancel/keep local edits action.
+- [x] Never silently overwrite remote conflicts.
 
 Done when:
 
-- [ ] Users understand whether a save succeeded, failed, or conflicted.
+- [x] Users understand whether a save succeeded, failed, or conflicted.
 
 Acceptance:
 
-- [ ] User can open and save a WebDAV vault.
-- [ ] ETag conflict does not overwrite server data.
-- [ ] Network, auth, and conflict failures have separate user messages.
+- [x] User can open and save a WebDAV vault.
+- [x] ETag conflict does not overwrite server data.
+- [x] Network, auth, and conflict failures have separate user messages.
 
 ## Phase P5: Desktop Release Quality
 

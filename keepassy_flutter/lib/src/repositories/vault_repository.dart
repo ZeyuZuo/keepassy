@@ -11,6 +11,14 @@ abstract class VaultRepository {
     String? keyfilePath,
   });
 
+  Future<OpenedVault> openWebDav({
+    required String url,
+    required String masterPassword,
+    String? username,
+    String? webDavPassword,
+    String? keyfilePath,
+  });
+
   Future<List<EntrySummary>> entriesForGroup(String groupId);
 
   Future<EntryDetail> entryDetail(String entryId);
@@ -107,6 +115,35 @@ class MockVaultRepository implements VaultRepository {
     }
 
     final vault = _sampleVault(path);
+    _vault = vault;
+    _dirty = false;
+    _details
+      ..clear()
+      ..addEntries(_sampleDetails.entries);
+    return vault;
+  }
+
+  @override
+  Future<OpenedVault> openWebDav({
+    required String url,
+    required String masterPassword,
+    String? username,
+    String? webDavPassword,
+    String? keyfilePath,
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 320));
+    validateWebDavUrl(url);
+    if (masterPassword.isEmpty) {
+      throw const VaultRepositoryException('Master password is required.');
+    }
+
+    final vault = _sampleVault(url.trim()).copyWith(
+      metadata: const RemoteMetadata(
+        etag: '"mock-etag"',
+        lastModified: 'Wed, 29 Apr 2026 00:00:00 GMT',
+        contentLength: 4096,
+      ),
+    );
     _vault = vault;
     _dirty = false;
     _details
@@ -501,6 +538,21 @@ class VaultRepositoryException implements Exception {
 
   @override
   String toString() => message;
+}
+
+void validateWebDavUrl(String url) {
+  final trimmed = url.trim();
+  if (trimmed.isEmpty) {
+    throw const VaultRepositoryException('WebDAV URL is required.');
+  }
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null ||
+      uri.host.isEmpty ||
+      (uri.scheme != 'http' && uri.scheme != 'https')) {
+    throw const VaultRepositoryException(
+      'WebDAV URL must start with http:// or https://.',
+    );
+  }
 }
 
 OpenedVault _sampleVault(String source) {

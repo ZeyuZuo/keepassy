@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../repositories/vault_repository.dart';
 import '../vault/vault_page.dart';
 
+enum _VaultSource { local, webDav }
+
 class UnlockPage extends StatefulWidget {
   const UnlockPage({super.key, required this.repository});
 
@@ -17,16 +19,24 @@ class _UnlockPageState extends State<UnlockPage> {
   final _pathController = TextEditingController(
     text: '/home/zzy/Desktop/code/KeepassY/keepass-rs/Database.kdbx',
   );
+  final _webDavUrlController = TextEditingController();
+  final _webDavUsernameController = TextEditingController();
+  final _webDavPasswordController = TextEditingController();
   final _passwordController = TextEditingController();
   final _keyfileController = TextEditingController();
+  _VaultSource _source = _VaultSource.local;
   bool _useKeyfile = false;
   bool _obscurePassword = true;
+  bool _obscureWebDavPassword = true;
   bool _opening = false;
   String? _error;
 
   @override
   void dispose() {
     _pathController.dispose();
+    _webDavUrlController.dispose();
+    _webDavUsernameController.dispose();
+    _webDavPasswordController.dispose();
     _passwordController.dispose();
     _keyfileController.dispose();
     super.dispose();
@@ -39,11 +49,20 @@ class _UnlockPageState extends State<UnlockPage> {
     });
 
     try {
-      final vault = await widget.repository.openLocal(
-        path: _pathController.text.trim(),
-        masterPassword: _passwordController.text,
-        keyfilePath: _useKeyfile ? _keyfileController.text.trim() : null,
-      );
+      final keyfilePath = _useKeyfile ? _keyfileController.text.trim() : null;
+      final vault = _source == _VaultSource.local
+          ? await widget.repository.openLocal(
+              path: _pathController.text.trim(),
+              masterPassword: _passwordController.text,
+              keyfilePath: keyfilePath,
+            )
+          : await widget.repository.openWebDav(
+              url: _webDavUrlController.text.trim(),
+              masterPassword: _passwordController.text,
+              username: _webDavUsernameController.text.trim(),
+              webDavPassword: _webDavPasswordController.text,
+              keyfilePath: keyfilePath,
+            );
       if (!mounted) {
         return;
       }
@@ -52,7 +71,7 @@ class _UnlockPageState extends State<UnlockPage> {
           builder: (_) => VaultPage(
             repository: widget.repository,
             initialVault: vault,
-            keyfilePath: _useKeyfile ? _keyfileController.text.trim() : null,
+            keyfilePath: keyfilePath,
           ),
         ),
       );
@@ -85,18 +104,34 @@ class _UnlockPageState extends State<UnlockPage> {
                 builder: (context, constraints) {
                   final compact = constraints.maxWidth < 840;
                   final form = _UnlockForm(
+                    source: _source,
                     pathController: _pathController,
+                    webDavUrlController: _webDavUrlController,
+                    webDavUsernameController: _webDavUsernameController,
+                    webDavPasswordController: _webDavPasswordController,
                     passwordController: _passwordController,
                     keyfileController: _keyfileController,
                     useKeyfile: _useKeyfile,
                     obscurePassword: _obscurePassword,
+                    obscureWebDavPassword: _obscureWebDavPassword,
                     opening: _opening,
                     error: _error,
+                    onSourceChanged: (value) {
+                      setState(() {
+                        _source = value;
+                        _error = null;
+                      });
+                    },
                     onUseKeyfileChanged: (value) {
                       setState(() => _useKeyfile = value);
                     },
                     onObscurePasswordChanged: () {
                       setState(() => _obscurePassword = !_obscurePassword);
+                    },
+                    onObscureWebDavPasswordChanged: () {
+                      setState(
+                        () => _obscureWebDavPassword = !_obscureWebDavPassword,
+                      );
                     },
                     onOpen: _opening ? null : _openVault,
                   );
@@ -180,26 +215,40 @@ class _ProductHeader extends StatelessWidget {
 
 class _UnlockForm extends StatelessWidget {
   const _UnlockForm({
+    required this.source,
     required this.pathController,
+    required this.webDavUrlController,
+    required this.webDavUsernameController,
+    required this.webDavPasswordController,
     required this.passwordController,
     required this.keyfileController,
     required this.useKeyfile,
     required this.obscurePassword,
+    required this.obscureWebDavPassword,
     required this.opening,
+    required this.onSourceChanged,
     required this.onUseKeyfileChanged,
     required this.onObscurePasswordChanged,
+    required this.onObscureWebDavPasswordChanged,
     required this.onOpen,
     this.error,
   });
 
+  final _VaultSource source;
   final TextEditingController pathController;
+  final TextEditingController webDavUrlController;
+  final TextEditingController webDavUsernameController;
+  final TextEditingController webDavPasswordController;
   final TextEditingController passwordController;
   final TextEditingController keyfileController;
   final bool useKeyfile;
   final bool obscurePassword;
+  final bool obscureWebDavPassword;
   final bool opening;
+  final ValueChanged<_VaultSource> onSourceChanged;
   final ValueChanged<bool> onUseKeyfileChanged;
   final VoidCallback onObscurePasswordChanged;
+  final VoidCallback onObscureWebDavPasswordChanged;
   final VoidCallback? onOpen;
   final String? error;
 
@@ -226,33 +275,94 @@ class _UnlockForm extends StatelessWidget {
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: pathController,
-                    decoration: const InputDecoration(
-                      labelText: 'KDBX file path',
-                      prefixIcon: Icon(Icons.folder_open_outlined),
-                    ),
-                    textInputAction: TextInputAction.next,
-                  ),
+            SegmentedButton<_VaultSource>(
+              segments: const [
+                ButtonSegment<_VaultSource>(
+                  value: _VaultSource.local,
+                  icon: Icon(Icons.folder_open_outlined),
+                  label: Text('Local file'),
                 ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: 'Browse for KDBX file',
-                  onPressed: () async {
-                    final result = await FilePicker.platform.pickFiles(
-                      dialogTitle: 'Open KDBX vault',
-                    );
-                    if (result != null && result.files.single.path != null) {
-                      pathController.text = result.files.single.path!;
-                    }
-                  },
-                  icon: const Icon(Icons.folder_open),
+                ButtonSegment<_VaultSource>(
+                  value: _VaultSource.webDav,
+                  icon: Icon(Icons.cloud_outlined),
+                  label: Text('WebDAV'),
                 ),
               ],
+              selected: {source},
+              onSelectionChanged: opening
+                  ? null
+                  : (values) => onSourceChanged(values.single),
             ),
+            const SizedBox(height: 18),
+            if (source == _VaultSource.local)
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: pathController,
+                      decoration: const InputDecoration(
+                        labelText: 'KDBX file path',
+                        prefixIcon: Icon(Icons.folder_open_outlined),
+                      ),
+                      textInputAction: TextInputAction.next,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Browse for KDBX file',
+                    onPressed: () async {
+                      final result = await FilePicker.platform.pickFiles(
+                        dialogTitle: 'Open KDBX vault',
+                      );
+                      if (result != null && result.files.single.path != null) {
+                        pathController.text = result.files.single.path!;
+                      }
+                    },
+                    icon: const Icon(Icons.folder_open),
+                  ),
+                ],
+              )
+            else ...[
+              TextField(
+                controller: webDavUrlController,
+                decoration: const InputDecoration(
+                  labelText: 'WebDAV URL',
+                  prefixIcon: Icon(Icons.cloud_outlined),
+                ),
+                keyboardType: TextInputType.url,
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: webDavUsernameController,
+                decoration: const InputDecoration(
+                  labelText: 'WebDAV username',
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: webDavPasswordController,
+                obscureText: obscureWebDavPassword,
+                decoration: InputDecoration(
+                  labelText: 'WebDAV password',
+                  prefixIcon: const Icon(Icons.cloud_sync_outlined),
+                  suffixIcon: IconButton(
+                    tooltip: obscureWebDavPassword
+                        ? 'Show WebDAV password'
+                        : 'Hide WebDAV password',
+                    onPressed: onObscureWebDavPasswordChanged,
+                    icon: Icon(
+                      obscureWebDavPassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
+                  ),
+                ),
+                textInputAction: TextInputAction.next,
+              ),
+            ],
             const SizedBox(height: 14),
             TextField(
               controller: passwordController,

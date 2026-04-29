@@ -26,6 +26,21 @@ void main() {
     expect(group.totalEntryCount, 3);
   });
 
+  test('WebDAV URL validation requires http or https URL', () {
+    expect(
+      () => validateWebDavUrl(''),
+      throwsA(isA<VaultRepositoryException>()),
+    );
+    expect(
+      () => validateWebDavUrl('ftp://example.com/vault.kdbx'),
+      throwsA(isA<VaultRepositoryException>()),
+    );
+    expect(
+      () => validateWebDavUrl('https://example.com/vault.kdbx'),
+      returnsNormally,
+    );
+  });
+
   testWidgets('starts on the unlock surface', (tester) async {
     final repo = MockVaultRepository();
     await tester.pumpWidget(KeepassYApp(repository: repo));
@@ -33,5 +48,17 @@ void main() {
     expect(find.text('KeePassY'), findsOneWidget);
     expect(find.text('Open vault'), findsOneWidget);
     expect(find.text('Unlock'), findsOneWidget);
+  });
+
+  testWidgets('WebDAV unlock fields are available', (tester) async {
+    final repo = MockVaultRepository();
+    await tester.pumpWidget(KeepassYApp(repository: repo));
+
+    await tester.tap(find.text('WebDAV'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('WebDAV URL'), findsOneWidget);
+    expect(find.text('WebDAV username'), findsOneWidget);
+    expect(find.text('WebDAV password'), findsOneWidget);
   });
 }
