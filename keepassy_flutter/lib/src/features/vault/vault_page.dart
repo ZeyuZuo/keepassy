@@ -45,6 +45,88 @@ class VaultPage extends StatefulWidget {
   State<VaultPage> createState() => _VaultPageState();
 }
 
+class _SaveVaultDialogResult {
+  const _SaveVaultDialogResult({required this.password, this.keyfilePath});
+
+  final String password;
+  final String? keyfilePath;
+}
+
+class _SaveVaultDialog extends StatefulWidget {
+  const _SaveVaultDialog({this.initialKeyfilePath});
+
+  final String? initialKeyfilePath;
+
+  @override
+  State<_SaveVaultDialog> createState() => _SaveVaultDialogState();
+}
+
+class _SaveVaultDialogState extends State<_SaveVaultDialog> {
+  final _passwordCtrl = TextEditingController();
+  final _keyfileCtrl = TextEditingController();
+
+  bool get _hasKeyfile => widget.initialKeyfilePath != null;
+
+  @override
+  void dispose() {
+    _passwordCtrl.dispose();
+    _keyfileCtrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final keyfileText = _keyfileCtrl.text.trim();
+    Navigator.of(context).pop(
+      _SaveVaultDialogResult(
+        password: _passwordCtrl.text,
+        keyfilePath: _hasKeyfile
+            ? (keyfileText.isNotEmpty ? keyfileText : widget.initialKeyfilePath)
+            : null,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Save vault'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _passwordCtrl,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'Master password'),
+              autofocus: true,
+              onSubmitted: (_) => _submit(),
+            ),
+            if (_hasKeyfile) ...[
+              const SizedBox(height: 14),
+              TextField(
+                controller: _keyfileCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Keyfile path',
+                  hintText: widget.initialKeyfilePath,
+                  prefixIcon: const Icon(Icons.insert_drive_file_outlined),
+                ),
+                onSubmitted: (_) => _submit(),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Save')),
+      ],
+    );
+  }
+}
+
 class _VaultPageState extends State<VaultPage> {
   late GroupNode _groupTree;
   late GroupNode _selectedGroup;
@@ -287,64 +369,13 @@ class _VaultPageState extends State<VaultPage> {
   }
 
   Future<void> _saveVault() async {
-    final passwordCtrl = TextEditingController();
-    final keyfileCtrl = TextEditingController();
-    final hasKeyfile = widget.keyfilePath != null;
-
-    // Return password from dialog to avoid dispose-while-dismissing crash.
-    final password = await showDialog<String>(
+    final result = await showDialog<_SaveVaultDialogResult>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Save vault'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: passwordCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'Master password'),
-                autofocus: true,
-                onSubmitted: (_) =>
-                    Navigator.of(context).pop(passwordCtrl.text),
-              ),
-              if (hasKeyfile) ...[
-                const SizedBox(height: 14),
-                TextField(
-                  controller: keyfileCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Keyfile path',
-                    hintText: widget.keyfilePath,
-                    prefixIcon: const Icon(Icons.insert_drive_file_outlined),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(null),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(passwordCtrl.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      builder: (context) =>
+          _SaveVaultDialog(initialKeyfilePath: widget.keyfilePath),
     );
 
-    final keyfilePath = hasKeyfile
-        ? (keyfileCtrl.text.trim().isNotEmpty
-              ? keyfileCtrl.text.trim()
-              : widget.keyfilePath)
-        : null;
-    // Safe: dialog fully dismissed, tree unmounted.
-    passwordCtrl.dispose();
-    keyfileCtrl.dispose();
-
-    if (password == null || password.isEmpty) return;
+    if (result == null || result.password.isEmpty) return;
 
     setState(() {
       _saving = true;
@@ -353,8 +384,8 @@ class _VaultPageState extends State<VaultPage> {
 
     try {
       await widget.repository.save(
-        masterPassword: password,
-        keyfilePath: keyfilePath,
+        masterPassword: result.password,
+        keyfilePath: result.keyfilePath,
       );
       if (!mounted) return;
       setState(() {
@@ -2572,6 +2603,13 @@ class _DetailPane extends StatelessWidget {
                       enabled: false,
                     ),
                   ),
+                  if (entry.value.isNotEmpty)
+                    IconButton(
+                      tooltip: 'Copy ${entry.key}',
+                      onPressed: () =>
+                          _copyToClipboard(context, entry.value, entry.key),
+                      icon: const Icon(Icons.copy, size: 18),
+                    ),
                   if (onRemoveCustomField != null)
                     IconButton(
                       tooltip: 'Remove ${entry.key}',
@@ -2598,9 +2636,7 @@ class _DetailPane extends StatelessWidget {
       icon: isProtected ? Icons.lock : Icons.tune_outlined,
       label: fieldKey,
       value: isProtected ? '[protected]' : value,
-      trailing: isProtected
-          ? null
-          : value.isNotEmpty
+      trailing: value.isNotEmpty
           ? IconButton(
               tooltip: 'Copy $fieldKey',
               onPressed: () => _copyToClipboard(context, value, fieldKey),
