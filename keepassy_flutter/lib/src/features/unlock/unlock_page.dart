@@ -42,7 +42,48 @@ class _UnlockPageState extends State<UnlockPage> {
     super.dispose();
   }
 
+  String? _validateForm() {
+    if (_source == _VaultSource.local) {
+      if (_pathController.text.trim().isEmpty) {
+        return 'File path is required.';
+      }
+    } else {
+      final url = _webDavUrlController.text.trim();
+      if (url.isEmpty) {
+        return 'Server URL is required.';
+      }
+      final uri = Uri.tryParse(url);
+      if (uri == null ||
+          uri.host.isEmpty ||
+          (uri.scheme != 'http' && uri.scheme != 'https')) {
+        return 'Server URL must start with http:// or https:// and include a host.';
+      }
+      if (_webDavUsernameController.text.trim().isEmpty) {
+        return 'Server username is required.';
+      }
+      if (_webDavPasswordController.text.isEmpty) {
+        return 'Server password is required.';
+      }
+    }
+
+    if (_passwordController.text.isEmpty) {
+      return 'Master password is required.';
+    }
+
+    if (_useKeyfile && _keyfileController.text.trim().isEmpty) {
+      return 'Keyfile path is required when keyfile is enabled.';
+    }
+
+    return null;
+  }
+
   Future<void> _openVault() async {
+    final validationError = _validateForm();
+    if (validationError != null) {
+      setState(() => _error = validationError);
+      return;
+    }
+
     setState(() {
       _opening = true;
       _error = null;
@@ -133,6 +174,7 @@ class _UnlockPageState extends State<UnlockPage> {
                         () => _obscureWebDavPassword = !_obscureWebDavPassword,
                       );
                     },
+                    onClearError: () => setState(() => _error = null),
                     onOpen: _opening ? null : _openVault,
                   );
 
@@ -178,8 +220,8 @@ class _ProductHeader extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.lock_outline, size: 48, color: colorScheme.primary),
-        const SizedBox(height: 28),
+        Icon(Icons.lock_outline, size: 40, color: colorScheme.primary),
+        const SizedBox(height: 24),
         Text(
           'KeePassY',
           style: Theme.of(context).textTheme.displaySmall?.copyWith(
@@ -187,26 +229,12 @@ class _ProductHeader extends StatelessWidget {
             letterSpacing: 0,
           ),
         ),
-        const SizedBox(height: 16),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Text(
-            'A desktop vault surface for the Rust KeePass backend.',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              height: 1.25,
-            ),
+        const SizedBox(height: 12),
+        Text(
+          'Open your vault',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
           ),
-        ),
-        const SizedBox(height: 32),
-        const Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _Capability(label: 'Local KDBX'),
-            _Capability(label: 'Keyfile ready'),
-            _Capability(label: 'JSON FFI boundary'),
-          ],
         ),
       ],
     );
@@ -231,6 +259,7 @@ class _UnlockForm extends StatelessWidget {
     required this.onObscurePasswordChanged,
     required this.onObscureWebDavPasswordChanged,
     required this.onOpen,
+    required this.onClearError,
     this.error,
   });
 
@@ -250,6 +279,7 @@ class _UnlockForm extends StatelessWidget {
   final VoidCallback onObscurePasswordChanged;
   final VoidCallback onObscureWebDavPasswordChanged;
   final VoidCallback? onOpen;
+  final VoidCallback onClearError;
   final String? error;
 
   @override
@@ -269,7 +299,7 @@ class _UnlockForm extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Open vault',
+              'Unlock vault',
               style: Theme.of(
                 context,
               ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
@@ -293,7 +323,9 @@ class _UnlockForm extends StatelessWidget {
                   ? null
                   : (values) => onSourceChanged(values.single),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 20),
+            const _SectionLabel('Source'),
+            const SizedBox(height: 10),
             if (source == _VaultSource.local)
               Row(
                 children: [
@@ -301,7 +333,7 @@ class _UnlockForm extends StatelessWidget {
                     child: TextField(
                       controller: pathController,
                       decoration: const InputDecoration(
-                        labelText: 'KDBX file path',
+                        labelText: 'File path',
                         prefixIcon: Icon(Icons.folder_open_outlined),
                       ),
                       textInputAction: TextInputAction.next,
@@ -326,7 +358,7 @@ class _UnlockForm extends StatelessWidget {
               TextField(
                 controller: webDavUrlController,
                 decoration: const InputDecoration(
-                  labelText: 'WebDAV URL',
+                  labelText: 'Server URL',
                   prefixIcon: Icon(Icons.cloud_outlined),
                 ),
                 keyboardType: TextInputType.url,
@@ -336,7 +368,7 @@ class _UnlockForm extends StatelessWidget {
               TextField(
                 controller: webDavUsernameController,
                 decoration: const InputDecoration(
-                  labelText: 'WebDAV username',
+                  labelText: 'Username',
                   prefixIcon: Icon(Icons.person_outline),
                 ),
                 textInputAction: TextInputAction.next,
@@ -346,12 +378,12 @@ class _UnlockForm extends StatelessWidget {
                 controller: webDavPasswordController,
                 obscureText: obscureWebDavPassword,
                 decoration: InputDecoration(
-                  labelText: 'WebDAV password',
-                  prefixIcon: const Icon(Icons.cloud_sync_outlined),
+                  labelText: 'Server password',
+                  prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     tooltip: obscureWebDavPassword
-                        ? 'Show WebDAV password'
-                        : 'Hide WebDAV password',
+                        ? 'Show server password'
+                        : 'Hide server password',
                     onPressed: onObscureWebDavPasswordChanged,
                     icon: Icon(
                       obscureWebDavPassword
@@ -363,7 +395,11 @@ class _UnlockForm extends StatelessWidget {
                 textInputAction: TextInputAction.next,
               ),
             ],
-            const SizedBox(height: 14),
+            const SizedBox(height: 20),
+            const Divider(),
+            const SizedBox(height: 20),
+            const _SectionLabel('Database credentials'),
+            const SizedBox(height: 10),
             TextField(
               controller: passwordController,
               obscureText: obscurePassword,
@@ -380,6 +416,7 @@ class _UnlockForm extends StatelessWidget {
                   ),
                 ),
               ),
+              onChanged: (_) => onClearError(),
               onSubmitted: (_) => onOpen?.call(),
             ),
             const SizedBox(height: 8),
@@ -450,24 +487,17 @@ class _UnlockForm extends StatelessWidget {
   }
 }
 
-class _Capability extends StatelessWidget {
-  const _Capability({required this.label});
-
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.label);
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        border: Border.all(color: colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Text(label),
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w600,
       ),
     );
   }
