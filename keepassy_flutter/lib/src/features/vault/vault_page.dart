@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 
 import '../../models/vault_models.dart';
 import '../../repositories/vault_repository.dart';
+import '../../widgets/field_line.dart';
+import '../../widgets/status_chip.dart';
 import '../unlock/unlock_page.dart';
 
 enum _RemoteConflictAction { keepLocal, reopenRemote }
@@ -1556,9 +1558,20 @@ class _VaultPageState extends State<VaultPage> {
         );
     }
 
-    return Listener(
-      onPointerDown: (_) => _resetInactivityTimer(),
-      child: Scaffold(
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true):
+            _saveVault,
+        const SingleActivator(LogicalKeyboardKey.keyL, control: true): _lock,
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true):
+            _showCreateDialog,
+        const SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true):
+            _copySelectedPassword,
+        const SingleActivator(LogicalKeyboardKey.escape): _handleEscape,
+      },
+      child: Listener(
+        onPointerDown: (_) => _resetInactivityTimer(),
+        child: Scaffold(
         appBar: AppBar(
           titleSpacing: 20,
           title: Row(
@@ -1567,7 +1580,7 @@ class _VaultPageState extends State<VaultPage> {
               const SizedBox(width: 10),
               const Text('KeePassY'),
               const SizedBox(width: 16),
-              _StatusChip(
+              StatusChip(
                 dirty: _dirty,
                 saving: _saving,
                 error: _saveError,
@@ -1854,7 +1867,29 @@ class _VaultPageState extends State<VaultPage> {
           },
         ),
       ),
+    ),
     );
+  }
+
+  void _copySelectedPassword() {
+    final pw = _detail?.password;
+    if (pw != null && pw.isNotEmpty) {
+      Clipboard.setData(ClipboardData(text: pw));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Password copied to clipboard'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  void _handleEscape() {
+    if (_editing) {
+      _cancelEdit();
+    }
   }
 
   void _showAutoLockConfig() {
@@ -1929,105 +1964,6 @@ class _SaveButton extends StatelessWidget {
                   : Icons.save_outlined,
             ),
     );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.dirty,
-    required this.saving,
-    required this.conflict,
-    this.error,
-  });
-
-  final bool dirty;
-  final bool saving;
-  final bool conflict;
-  final String? error;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    if (saving) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox.square(
-            dimension: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: colorScheme.primary,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            'Saving',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: colorScheme.primary,
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (conflict) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: colorScheme.error.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          'Conflict',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: colorScheme.error,
-          ),
-        ),
-      );
-    }
-
-    if (error != null) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: colorScheme.error.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          'Save failed',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: colorScheme.error,
-          ),
-        ),
-      );
-    }
-
-    if (dirty) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: colorScheme.primary.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          'Unsaved',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: colorScheme.primary,
-          ),
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
   }
 }
 
@@ -2687,13 +2623,11 @@ class _DetailPane extends StatelessWidget {
                 onPressed: onDuplicateEntry,
                 icon: const Icon(Icons.copy),
               ),
-            if (onToggleHistory != null)
+            if (detail.password != null && detail.password!.isNotEmpty)
               IconButton(
-                tooltip: showHistory ? 'Close history' : 'Entry history',
-                onPressed: onToggleHistory,
-                icon: Icon(
-                  showHistory ? Icons.history_toggle_off : Icons.history,
-                ),
+                tooltip: 'Copy password',
+                onPressed: () => _copyToClipboard(context, detail.password!, 'Password'),
+                icon: const Icon(Icons.key),
               ),
             IconButton(
               tooltip: 'Edit entry',
@@ -2707,36 +2641,6 @@ class _DetailPane extends StatelessWidget {
             ),
           ],
         ),
-        if (showHistory) ...[
-          const SizedBox(height: 8),
-          if (loadingHistory)
-            const Center(child: CircularProgressIndicator())
-          else if (history == null || history!.isEmpty)
-            Text(
-              'No history entries',
-              style: TextStyle(color: colorScheme.onSurfaceVariant),
-            )
-          else
-            for (final item in history!)
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.history),
-                title: Text(
-                  item.title ?? 'Untitled snapshot',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  item.lastModified ?? '',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: onViewHistoryDetail != null
-                    ? () => onViewHistoryDetail!(item)
-                    : null,
-              ),
-          const SizedBox(height: 8),
-        ],
         const SizedBox(height: 20),
         _buildCopyField(
           context: context,
@@ -2756,7 +2660,7 @@ class _DetailPane extends StatelessWidget {
           label: 'URL',
           value: detail.url ?? '',
         ),
-        _FieldLine(
+        FieldLine(
           icon: Icons.notes_outlined,
           label: 'Notes',
           value: detail.notes ?? '',
@@ -2806,7 +2710,7 @@ class _DetailPane extends StatelessWidget {
           )
         else
           for (final attachment in detail.attachments)
-            _FieldLine(
+            FieldLine(
               icon: attachment.protected
                   ? Icons.enhanced_encryption_outlined
                   : Icons.attach_file_outlined,
@@ -2838,6 +2742,56 @@ class _DetailPane extends StatelessWidget {
                 ],
               ),
             ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Text(
+              'History',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const Spacer(),
+            if (onToggleHistory != null)
+              IconButton(
+                tooltip: showHistory ? 'Close history' : 'Entry history',
+                onPressed: onToggleHistory,
+                icon: Icon(
+                  showHistory ? Icons.history_toggle_off : Icons.history,
+                ),
+              ),
+          ],
+        ),
+        if (showHistory) ...[
+          const SizedBox(height: 8),
+          if (loadingHistory)
+            const Center(child: CircularProgressIndicator())
+          else if (history == null || history!.isEmpty)
+            Text(
+              'No history entries',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            )
+          else
+            for (final item in history!)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.history),
+                title: Text(
+                  item.title ?? 'Untitled snapshot',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  item.lastModified ?? '',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onViewHistoryDetail != null
+                    ? () => onViewHistoryDetail!(item)
+                    : null,
+              ),
+        ],
       ],
     );
   }
@@ -3026,6 +2980,22 @@ class _DetailPane extends StatelessWidget {
                 ],
               ),
         ],
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            OutlinedButton(
+              onPressed: onCancelEdit,
+              child: const Text('Cancel'),
+            ),
+            const SizedBox(width: 12),
+            FilledButton.icon(
+              onPressed: onSaveEdit,
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text('Save changes'),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -3038,7 +3008,7 @@ class _DetailPane extends StatelessWidget {
   }) {
     if (isProtected) {
       final visible = visibleCustomFields.contains(fieldKey);
-      return _FieldLine(
+      return FieldLine(
         icon: Icons.lock,
         label: fieldKey,
         value: visible ? value : '••••••••••••',
@@ -3064,7 +3034,7 @@ class _DetailPane extends StatelessWidget {
         ),
       );
     }
-    return _FieldLine(
+    return FieldLine(
       icon: Icons.tune_outlined,
       label: fieldKey,
       value: value,
@@ -3084,7 +3054,7 @@ class _DetailPane extends StatelessWidget {
     required String label,
     required String value,
   }) {
-    return _FieldLine(
+    return FieldLine(
       icon: icon,
       label: label,
       value: value,
@@ -3104,7 +3074,7 @@ class _DetailPane extends StatelessWidget {
     required String value,
     required VoidCallback onToggle,
   }) {
-    return _FieldLine(
+    return FieldLine(
       icon: Icons.password_outlined,
       label: 'Password',
       value: visible ? value : '••••••••••••',
@@ -3151,54 +3121,6 @@ class _DetailPane extends StatelessWidget {
         ),
       );
     }
-  }
-}
-
-class _FieldLine extends StatelessWidget {
-  const _FieldLine({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.trailing,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: colorScheme.onSurfaceVariant),
-          const SizedBox(width: 14),
-          SizedBox(
-            width: 116,
-            child: Text(
-              label,
-              style: TextStyle(color: colorScheme.onSurfaceVariant),
-            ),
-          ),
-          Expanded(
-            child: SelectableText(
-              value.isEmpty ? 'Not set' : value,
-              style: TextStyle(
-                color: value.isEmpty
-                    ? colorScheme.onSurfaceVariant
-                    : colorScheme.onSurface,
-              ),
-            ),
-          ),
-          if (trailing != null) trailing!,
-        ],
-      ),
-    );
   }
 }
 
