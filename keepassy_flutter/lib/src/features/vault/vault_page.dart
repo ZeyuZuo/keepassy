@@ -12,6 +12,14 @@ import '../unlock/unlock_page.dart';
 
 enum _RemoteConflictAction { keepLocal, reopenRemote }
 
+enum _MoreAction {
+  createEntry,
+  remoteMetadata,
+  changePassword,
+  autoLock,
+  reopenRemote,
+}
+
 double _pwStrength(String pw) {
   if (pw.isEmpty) return 0;
   double score = 0;
@@ -143,6 +151,7 @@ class _VaultPageState extends State<VaultPage> {
   bool _dirty = false;
   bool _saving = false;
   String? _saveError;
+  bool _conflict = false;
   bool _showHistory = false;
   List<HistorySummary>? _history;
   bool _loadingHistory = false;
@@ -393,6 +402,7 @@ class _VaultPageState extends State<VaultPage> {
       setState(() {
         _dirty = false;
         _saving = false;
+        _conflict = false;
       });
     } on Object catch (err) {
       if (!mounted) return;
@@ -401,6 +411,7 @@ class _VaultPageState extends State<VaultPage> {
         _saveError = err.toString();
       });
       if (_isRemoteConflict(err)) {
+        setState(() => _conflict = true);
         await _showRemoteConflictDialog(err.toString());
       } else {
         ScaffoldMessenger.of(
@@ -440,13 +451,7 @@ class _VaultPageState extends State<VaultPage> {
     );
 
     if (action == _RemoteConflictAction.reopenRemote) {
-      await widget.repository.close();
-      if (!mounted) return;
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => UnlockPage(repository: widget.repository),
-        ),
-      );
+      await _reopenRemote();
     }
   }
 
@@ -940,6 +945,16 @@ class _VaultPageState extends State<VaultPage> {
       if (confirmed != true) return;
     }
 
+    await widget.repository.close();
+    if (!mounted) return;
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => UnlockPage(repository: widget.repository),
+      ),
+    );
+  }
+
+  Future<void> _reopenRemote() async {
     await widget.repository.close();
     if (!mounted) return;
     await Navigator.of(context).pushReplacement(
@@ -1550,7 +1565,14 @@ class _VaultPageState extends State<VaultPage> {
               const Icon(Icons.lock_outline),
               const SizedBox(width: 10),
               const Text('KeePassY'),
-              const SizedBox(width: 18),
+              const SizedBox(width: 16),
+              _StatusChip(
+                dirty: _dirty,
+                saving: _saving,
+                error: _saveError,
+                conflict: _conflict,
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   widget.initialVault.source,
@@ -1572,32 +1594,80 @@ class _VaultPageState extends State<VaultPage> {
                   color: Theme.of(context).colorScheme.error,
                 ),
               ),
-            if (widget.initialVault.metadata != null)
-              IconButton(
-                tooltip: 'Remote metadata',
-                onPressed: _showRemoteMetadata,
-                icon: const Icon(Icons.cloud_done_outlined),
-              ),
-            IconButton(
-              tooltip: 'Change master password',
-              onPressed: _changePasswordDialog,
-              icon: const Icon(Icons.vpn_key_outlined),
-            ),
-            IconButton(
-              tooltip: 'Create entry',
-              onPressed: _showCreateDialog,
-              icon: const Icon(Icons.add),
-            ),
             _SaveButton(
               dirty: _dirty,
               saving: _saving,
               error: _saveError,
+              conflict: _conflict,
               onPressed: _saveVault,
             ),
-            IconButton(
-              tooltip: 'Auto-lock settings',
-              onPressed: _showAutoLockConfig,
-              icon: const Icon(Icons.timer_outlined),
+            PopupMenuButton<_MoreAction>(
+              tooltip: 'More actions',
+              icon: const Icon(Icons.more_vert),
+              onSelected: (action) {
+                switch (action) {
+                  case _MoreAction.createEntry:
+                    _showCreateDialog();
+                  case _MoreAction.remoteMetadata:
+                    _showRemoteMetadata();
+                  case _MoreAction.changePassword:
+                    _changePasswordDialog();
+                  case _MoreAction.autoLock:
+                    _showAutoLockConfig();
+                  case _MoreAction.reopenRemote:
+                    _reopenRemote();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem<_MoreAction>(
+                  value: _MoreAction.createEntry,
+                  child: ListTile(
+                    leading: Icon(Icons.add),
+                    title: Text('Create entry'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                if (widget.initialVault.metadata != null)
+                  const PopupMenuItem<_MoreAction>(
+                    value: _MoreAction.remoteMetadata,
+                    child: ListTile(
+                      leading: Icon(Icons.cloud_done_outlined),
+                      title: Text('Remote metadata'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                const PopupMenuItem<_MoreAction>(
+                  value: _MoreAction.changePassword,
+                  child: ListTile(
+                    leading: Icon(Icons.vpn_key_outlined),
+                    title: Text('Change master password'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                const PopupMenuItem<_MoreAction>(
+                  value: _MoreAction.autoLock,
+                  child: ListTile(
+                    leading: Icon(Icons.timer_outlined),
+                    title: Text('Auto-lock settings'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+                if (_conflict)
+                  const PopupMenuItem<_MoreAction>(
+                    value: _MoreAction.reopenRemote,
+                    child: ListTile(
+                      leading: Icon(Icons.refresh, color: Colors.red),
+                      title: Text('Reopen remote',
+                          style: TextStyle(color: Colors.red)),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+              ],
             ),
             IconButton(
               tooltip: 'Lock vault',
@@ -1787,49 +1857,140 @@ class _SaveButton extends StatelessWidget {
     required this.saving,
     required this.onPressed,
     this.error,
+    this.conflict = false,
   });
 
   final bool dirty;
   final bool saving;
   final VoidCallback onPressed;
   final String? error;
+  final bool conflict;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = dirty || error != null || conflict;
+
+    return IconButton(
+      tooltip: conflict
+          ? 'Save failed — remote conflict'
+          : error != null
+          ? 'Save failed: $error'
+          : dirty
+          ? 'Save vault (unsaved changes)'
+          : 'Save vault',
+      onPressed: enabled ? onPressed : null,
+      icon: saving
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Icon(
+              conflict || error != null
+                  ? Icons.error_outline
+                  : dirty
+                  ? Icons.save_as_outlined
+                  : Icons.save_outlined,
+            ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({
+    required this.dirty,
+    required this.saving,
+    required this.conflict,
+    this.error,
+  });
+
+  final bool dirty;
+  final bool saving;
+  final bool conflict;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     if (saving) {
-      return const Padding(
-        padding: EdgeInsets.all(12),
-        child: SizedBox.square(
-          dimension: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox.square(
+            dimension: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'Saving',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: colorScheme.primary,
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (conflict) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: colorScheme.error.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          'Conflict',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.error,
+          ),
         ),
       );
     }
 
-    final tooltip = error != null
-        ? 'Save failed: $error'
-        : dirty
-        ? 'Save vault (unsaved changes)'
-        : 'Save vault';
+    if (error != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: colorScheme.error.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          'Save failed',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.error,
+          ),
+        ),
+      );
+    }
 
-    final enabled = dirty || error != null;
+    if (dirty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: colorScheme.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          'Unsaved',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: colorScheme.primary,
+          ),
+        ),
+      );
+    }
 
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: enabled ? onPressed : null,
-      icon: Icon(
-        error != null
-            ? Icons.error_outline
-            : dirty
-            ? Icons.save_as_outlined
-            : Icons.save_outlined,
-        color: error != null
-            ? Theme.of(context).colorScheme.error
-            : dirty
-            ? Theme.of(context).colorScheme.primary
-            : null,
-      ),
-    );
+    return const SizedBox.shrink();
   }
 }
 
