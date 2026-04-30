@@ -41,11 +41,13 @@ class _CreateVaultResult {
   const _CreateVaultResult({
     required this.vault,
     required this.path,
+    required this.masterPassword,
     this.keyfilePath,
   });
 
   final OpenedVault vault;
   final String path;
+  final String masterPassword;
   final String? keyfilePath;
 }
 
@@ -196,7 +198,12 @@ class _CreateVaultDialogState extends State<_CreateVaultDialog> {
         return;
       }
       Navigator.of(context).pop(
-        _CreateVaultResult(vault: vault, path: path, keyfilePath: keyfilePath),
+        _CreateVaultResult(
+          vault: vault,
+          path: path,
+          masterPassword: _passwordCtrl.text,
+          keyfilePath: keyfilePath,
+        ),
       );
     } on Object catch (err) {
       if (!mounted) {
@@ -522,6 +529,7 @@ class _UnlockPageState extends State<UnlockPage> {
         builder: (_) => VaultPage(
           repository: widget.repository,
           initialVault: result.vault,
+          masterPassword: result.masterPassword,
           keyfilePath: result.keyfilePath,
           settingsService: svc,
         ),
@@ -610,6 +618,7 @@ class _UnlockPageState extends State<UnlockPage> {
           builder: (_) => VaultPage(
             repository: widget.repository,
             initialVault: vault,
+            masterPassword: _passwordController.text,
             keyfilePath: keyfilePath,
             settingsService: svc,
           ),

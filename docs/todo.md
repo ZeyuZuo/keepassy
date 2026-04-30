@@ -20,12 +20,13 @@ and keep frontend design rules in `keepassy_flutter/docs/frontend.md`.
 
 ## Current Priority
 
-Current sprint: Phase P4.8, Recycle Bin.
+Current sprint: Phase P5, Desktop Release Quality.
 
 Local and WebDAV workflows are functionally complete enough for daily use, and
 the first UX/UI refactor pass is complete. Settings and local `.kdbx` creation
-are implemented. The next meaningful milestone is implementing Recycle Bin
-semantics so normal deletes become recoverable.
+are implemented. Recycle Bin semantics are now implemented for entry and group
+deletes.
+The next meaningful milestone is packaging and release-readiness work.
 
 ## Phase P0: Baseline and Documentation
 
@@ -785,68 +786,73 @@ semantics and restore support.
 
 ### P4.8.1 Backend Recycle Bin Model
 
-- [ ] Inspect KeePass database fields for Recycle Bin group support.
-- [ ] Decide how to create or identify the Recycle Bin group.
-- [ ] Define original-location metadata strategy for restore:
-  - custom data on entry
-  - custom field
-  - database-level metadata
-  - other KeePass-compatible option
-- [ ] Ensure metadata does not collide with user fields.
-- [ ] Add API to move entry to Recycle Bin.
-- [ ] Add API to restore entry to original group or fallback group.
-- [ ] Add API to permanently delete recycled entry.
-- [ ] Add API to empty Recycle Bin.
-- [ ] Decide whether group deletion enters Recycle Bin or remains hard-delete
-      for the first version.
+- [x] Inspect KeePass database fields for Recycle Bin group support.
+- [x] Decide how to create or identify the Recycle Bin group.
+- [x] Define original-location metadata strategy for restore: entry custom data
+      under `keepassy.original_group_id`.
+- [x] Ensure metadata does not collide with user fields.
+- [x] Add API to move entry to Recycle Bin.
+- [x] Add API to restore entry to original group or fallback group.
+- [x] Add API to permanently delete recycled entry.
+- [x] Add API to empty Recycle Bin.
+- [x] Add API to move groups to Recycle Bin.
+- [x] Add API to restore and permanently delete recycled groups.
+- [x] Decide whether group deletion enters Recycle Bin or remains hard-delete
+      for the first version: group deletion now enters Recycle Bin.
 
 Done when:
 
-- [ ] Entry deletion is recoverable and original group restore is reliable.
+- [x] Entry deletion is recoverable and original group restore is reliable.
 
 ### P4.8.2 FFI and Repository
 
-- [ ] Add FFI wrappers for recycle, restore, permanent delete, and empty bin.
-- [ ] Add Dart repository methods.
-- [ ] Update mock repository behavior.
-- [ ] Ensure save/dirty semantics match other mutations.
-- [ ] Add tests for restore and empty-bin behavior.
+- [x] Add FFI wrappers for recycle, restore, permanent delete, and empty bin.
+- [x] Add FFI wrappers for recycled group restore and permanent delete.
+- [x] Add Dart repository methods.
+- [x] Update mock repository behavior.
+- [x] Ensure save/dirty semantics match other mutations.
+- [x] Add tests for restore and empty-bin behavior.
 
 Done when:
 
-- [ ] Flutter can manage recycled entries without bypassing Rust core logic.
+- [x] Flutter can manage recycled entries without bypassing Rust core logic.
 
 ### P4.8.3 Frontend Recycle Bin UX
 
-- [ ] Show Recycle Bin in the group tree with a recognizable icon.
-- [ ] Rename destructive entry delete to move to Recycle Bin where applicable.
-- [ ] Add restore action for entries in Recycle Bin.
-- [ ] Add permanent delete action for entries in Recycle Bin.
-- [ ] Add empty Recycle Bin action with strong confirmation.
-- [ ] Keep bulk delete recoverable by moving selected entries to Recycle Bin.
-- [ ] Clearly distinguish recoverable delete from permanent delete.
+- [x] Show Recycle Bin in the group tree with a recognizable icon.
+- [x] Rename destructive entry delete to move to Recycle Bin where applicable.
+- [x] Add restore action for entries in Recycle Bin.
+- [x] Add permanent delete action for entries in Recycle Bin.
+- [x] Add empty Recycle Bin action with strong confirmation.
+- [x] Keep bulk delete recoverable by moving selected entries to Recycle Bin.
+- [x] Clearly distinguish recoverable delete from permanent delete.
+- [x] Keep the Groups header and create-group action visible when Recycle Bin is
+      selected.
+- [x] Use the opened vault credentials for save instead of asking for the
+      password again.
 
 Done when:
 
-- [ ] Users can recover accidentally deleted entries.
+- [x] Users can recover accidentally deleted entries.
 
 ### P4.8.4 Verification
 
-- [ ] `cargo fmt --all --check`.
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`.
-- [ ] `cargo test --workspace`.
-- [ ] `dart format lib test` clean.
-- [ ] `flutter analyze` clean.
-- [ ] `flutter test` pass.
+- [x] `cargo fmt --all --check`.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings`.
+- [x] `cargo test --workspace`.
+- [x] `dart format lib test` clean.
+- [x] `flutter analyze` clean.
+- [x] `flutter test` pass.
 - [ ] Manual test: delete entry, save, reopen, restore, save, reopen, verify.
 - [ ] Manual test: empty Recycle Bin, save, reopen, verify permanent removal.
 
 Acceptance:
 
-- [ ] Normal delete no longer hard-deletes entries.
-- [ ] Restore returns entries to their original group when possible.
-- [ ] Permanent deletion is explicit and confirmed.
-- [ ] Recycle Bin behavior is documented.
+- [x] Normal delete no longer hard-deletes entries.
+- [x] Normal group delete no longer hard-deletes groups.
+- [x] Restore returns entries to their original group when possible.
+- [x] Permanent deletion is explicit and confirmed.
+- [x] Recycle Bin behavior is documented.
 
 ## Phase P5: Desktop Release Quality
 

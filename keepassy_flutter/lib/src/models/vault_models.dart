@@ -56,12 +56,14 @@ class GroupNode {
   GroupNode({
     required this.id,
     required this.name,
+    this.isRecycleBin = false,
     required this.entries,
     required this.groups,
   });
 
   final String id;
   String name;
+  final bool isRecycleBin;
   final List<EntrySummary> entries;
   final List<GroupNode> groups;
 
@@ -69,6 +71,7 @@ class GroupNode {
     return GroupNode(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? 'Untitled group',
+      isRecycleBin: json['is_recycle_bin'] as bool? ?? false,
       entries: (json['entries'] as List<Object?>? ?? const [])
           .cast<Map<String, Object?>>()
           .map(EntrySummary.fromJson)

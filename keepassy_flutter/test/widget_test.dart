@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:keepassy_flutter/src/app/keepassy_app.dart';
+import 'package:keepassy_flutter/src/features/vault/vault_page.dart';
 import 'package:keepassy_flutter/src/models/vault_models.dart';
 import 'package:keepassy_flutter/src/repositories/vault_repository.dart';
 
@@ -184,6 +185,129 @@ void main() {
     );
 
     expect(vault.source, '/tmp/keyfile-only.kdbx');
+  });
+
+  test(
+    'mock repository moves deletes to recycle bin and restores entries',
+    () async {
+      final repo = MockVaultRepository();
+      await repo.openLocal(path: '/tmp/test.kdbx', masterPassword: 'password');
+
+      final recycled = await repo.deleteEntry('entry-github');
+      final recycleBin = recycled.groupTree.flatten().firstWhere(
+        (group) => group.isRecycleBin,
+      );
+
+      expect(recycleBin.name, 'Recycle Bin');
+      expect(
+        recycleBin.entries.map((entry) => entry.id),
+        contains('entry-github'),
+      );
+      expect(
+        recycled.groupTree.entries.map((entry) => entry.id),
+        isNot(contains('entry-github')),
+      );
+
+      final restored = await repo.restoreEntry('entry-github');
+
+      expect(
+        restored.groupTree.entries.map((entry) => entry.id),
+        contains('entry-github'),
+      );
+      expect(recycleBin.entries, isEmpty);
+    },
+  );
+
+  test(
+    'mock repository moves groups to recycle bin and restores them',
+    () async {
+      final repo = MockVaultRepository();
+      await repo.openLocal(path: '/tmp/test.kdbx', masterPassword: 'password');
+
+      final recycled = await repo.deleteGroup('group-work');
+      final recycleBin = recycled.groupTree.flatten().firstWhere(
+        (group) => group.isRecycleBin,
+      );
+
+      expect(
+        recycleBin.groups.map((group) => group.id),
+        contains('group-work'),
+      );
+      expect(
+        recycled.groupTree.groups.map((group) => group.id),
+        isNot(contains('group-work')),
+      );
+
+      final restored = await repo.restoreGroup('group-work');
+
+      expect(
+        restored.groupTree.groups.map((group) => group.id),
+        contains('group-work'),
+      );
+      expect(recycleBin.groups, isEmpty);
+    },
+  );
+
+  testWidgets('recycled groups are visually marked under recycle bin', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final repo = MockVaultRepository();
+    final vault = OpenedVault(
+      source: '/tmp/test.kdbx',
+      groupTree: GroupNode(
+        id: 'root',
+        name: 'Database',
+        entries: [],
+        groups: [
+          GroupNode(
+            id: 'recycle',
+            name: 'Recycle Bin',
+            isRecycleBin: true,
+            entries: [],
+            groups: [
+              GroupNode(
+                id: 'deleted-group',
+                name: 'Deleted group',
+                entries: [],
+                groups: [],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: VaultPage(
+          repository: repo,
+          initialVault: vault,
+          masterPassword: 'password',
+        ),
+      ),
+    );
+
+    expect(find.text('Groups'), findsOneWidget);
+    expect(find.byTooltip('New group'), findsOneWidget);
+    expect(find.text('Recycle Bin'), findsAtLeastNWidgets(1));
+    expect(find.text('0 entries, 1 group'), findsOneWidget);
+    expect(find.text('Deleted group'), findsOneWidget);
+    expect(find.text('0 entries in Recycle Bin'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Collapse group').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Deleted group'), findsNothing);
+
+    await tester.tap(find.byTooltip('Expand group'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Deleted group'), findsOneWidget);
   });
 
   // --- Validation ---

@@ -33,7 +33,13 @@ abstract class VaultRepository {
 
   Future<EntryDetail> updateEntry(UpdateEntryRequest request);
 
-  Future<void> deleteEntry(String entryId);
+  Future<OpenedVault> deleteEntry(String entryId);
+
+  Future<OpenedVault> restoreEntry(String entryId);
+
+  Future<OpenedVault> permanentlyDeleteEntry(String entryId);
+
+  Future<OpenedVault> emptyRecycleBin();
 
   Future<bool> isDirty();
 
@@ -92,7 +98,9 @@ abstract class VaultRepository {
     required String groupId,
     required String name,
   });
-  Future<void> deleteGroup(String groupId);
+  Future<OpenedVault> deleteGroup(String groupId);
+  Future<OpenedVault> restoreGroup(String groupId);
+  Future<OpenedVault> permanentlyDeleteGroup(String groupId);
   Future<EntryDetail> moveEntry(String entryId, String targetGroupId);
   Future<void> changePassword({
     required String oldPassword,
@@ -104,6 +112,8 @@ abstract class VaultRepository {
 class MockVaultRepository implements VaultRepository {
   OpenedVault? _vault;
   final Map<String, EntryDetail> _details = {};
+  final Map<String, String> _recycledOriginalGroups = {};
+  final Map<String, String> _recycledOriginalParentGroups = {};
   bool _dirty = false;
 
   @override
@@ -129,6 +139,8 @@ class MockVaultRepository implements VaultRepository {
     _details
       ..clear()
       ..addEntries(_sampleDetails.entries);
+    _recycledOriginalGroups.clear();
+    _recycledOriginalParentGroups.clear();
     return vault;
   }
 
@@ -154,6 +166,8 @@ class MockVaultRepository implements VaultRepository {
     _details
       ..clear()
       ..addEntries(_sampleDetails.entries);
+    _recycledOriginalGroups.clear();
+    _recycledOriginalParentGroups.clear();
     return vault;
   }
 
@@ -186,6 +200,8 @@ class MockVaultRepository implements VaultRepository {
     _details
       ..clear()
       ..addEntries(_sampleDetails.entries);
+    _recycledOriginalGroups.clear();
+    _recycledOriginalParentGroups.clear();
     return vault;
   }
 
@@ -263,16 +279,93 @@ class MockVaultRepository implements VaultRepository {
   }
 
   @override
-  Future<void> deleteEntry(String entryId) async {
-    if (!_details.containsKey(entryId)) {
+  Future<OpenedVault> deleteEntry(String entryId) async {
+    final detail = _details[entryId];
+    if (detail == null) {
+      throw VaultRepositoryException('Entry not found: $entryId');
+    }
+    final vault = _requireVault();
+    final source = vault.groupTree.flatten().firstWhere(
+      (group) => group.entries.any((entry) => entry.id == entryId),
+      orElse: () => throw VaultRepositoryException('Entry not found: $entryId'),
+    );
+    if (source.isRecycleBin) {
+      return permanentlyDeleteEntry(entryId);
+    }
+    final idx = source.entries.indexWhere((entry) => entry.id == entryId);
+    final summary = source.entries.removeAt(idx);
+    final recycleBin = _ensureRecycleBin(vault);
+    _recycledOriginalGroups[entryId] = source.id;
+    recycleBin.entries.add(summary);
+    _dirty = true;
+    return vault;
+  }
+
+  @override
+  Future<OpenedVault> restoreEntry(String entryId) async {
+    final vault = _requireVault();
+    final recycleBin = vault.groupTree.flatten().firstWhere(
+      (group) => group.isRecycleBin,
+      orElse: () => throw const VaultRepositoryException('Recycle bin missing'),
+    );
+    final idx = recycleBin.entries.indexWhere((entry) => entry.id == entryId);
+    if (idx == -1) {
+      throw VaultRepositoryException(
+        'Entry not found in recycle bin: $entryId',
+      );
+    }
+    final summary = recycleBin.entries.removeAt(idx);
+    final originalGroupId = _recycledOriginalGroups.remove(entryId);
+    final target = vault.groupTree.flatten().firstWhere(
+      (group) => group.id == originalGroupId && !group.isRecycleBin,
+      orElse: () => vault.groupTree,
+    );
+    target.entries.add(summary);
+    _dirty = true;
+    return vault;
+  }
+
+  @override
+  Future<OpenedVault> permanentlyDeleteEntry(String entryId) async {
+    final vault = _requireVault();
+    var removed = false;
+    for (final group in vault.groupTree.flatten()) {
+      final before = group.entries.length;
+      group.entries.removeWhere((entry) => entry.id == entryId);
+      removed = removed || group.entries.length != before;
+    }
+    if (!removed && !_details.containsKey(entryId)) {
       throw VaultRepositoryException('Entry not found: $entryId');
     }
     _details.remove(entryId);
+    _recycledOriginalGroups.remove(entryId);
+    _dirty = true;
+    return vault;
+  }
+
+  @override
+  Future<OpenedVault> emptyRecycleBin() async {
     final vault = _requireVault();
-    for (final group in vault.groupTree.flatten()) {
-      group.entries.removeWhere((e) => e.id == entryId);
+    final recycleBin = vault.groupTree.flatten().where((g) => g.isRecycleBin);
+    for (final group in recycleBin) {
+      for (final entry in group.entries) {
+        _details.remove(entry.id);
+        _recycledOriginalGroups.remove(entry.id);
+      }
+      for (final recycledGroup in group.groups) {
+        for (final nested in recycledGroup.flatten()) {
+          _recycledOriginalParentGroups.remove(nested.id);
+          for (final entry in nested.entries) {
+            _details.remove(entry.id);
+            _recycledOriginalGroups.remove(entry.id);
+          }
+        }
+      }
+      group.entries.clear();
+      group.groups.clear();
     }
     _dirty = true;
+    return vault;
   }
 
   @override
@@ -470,6 +563,7 @@ class MockVaultRepository implements VaultRepository {
         return GroupNode(
           id: g.id,
           name: name,
+          isRecycleBin: g.isRecycleBin,
           entries: g.entries,
           groups: g.groups,
         );
@@ -479,17 +573,66 @@ class MockVaultRepository implements VaultRepository {
   }
 
   @override
-  Future<void> deleteGroup(String groupId) async {
+  Future<OpenedVault> deleteGroup(String groupId) async {
     final vault = _requireVault();
     for (final g in vault.groupTree.flatten()) {
       final idx = g.groups.indexWhere((c) => c.id == groupId);
       if (idx != -1) {
-        g.groups.removeAt(idx);
+        final group = g.groups.removeAt(idx);
+        final recycleBin = _ensureRecycleBin(vault);
+        _recycledOriginalParentGroups[groupId] = g.id;
+        recycleBin.groups.add(group);
         _dirty = true;
-        return;
+        return vault;
       }
     }
     throw VaultRepositoryException('Cannot delete root group');
+  }
+
+  @override
+  Future<OpenedVault> restoreGroup(String groupId) async {
+    final vault = _requireVault();
+    final recycleBin = vault.groupTree.flatten().firstWhere(
+      (group) => group.isRecycleBin,
+      orElse: () => throw const VaultRepositoryException('Recycle bin missing'),
+    );
+    final idx = recycleBin.groups.indexWhere((group) => group.id == groupId);
+    if (idx == -1) {
+      throw VaultRepositoryException(
+        'Group not found in recycle bin: $groupId',
+      );
+    }
+    final group = recycleBin.groups.removeAt(idx);
+    final originalParentId = _recycledOriginalParentGroups.remove(groupId);
+    final target = vault.groupTree.flatten().firstWhere(
+      (candidate) =>
+          candidate.id == originalParentId && !candidate.isRecycleBin,
+      orElse: () => vault.groupTree,
+    );
+    target.groups.add(group);
+    _dirty = true;
+    return vault;
+  }
+
+  @override
+  Future<OpenedVault> permanentlyDeleteGroup(String groupId) async {
+    final vault = _requireVault();
+    for (final g in vault.groupTree.flatten()) {
+      final idx = g.groups.indexWhere((c) => c.id == groupId);
+      if (idx != -1) {
+        final removed = g.groups.removeAt(idx);
+        for (final nested in removed.flatten()) {
+          _recycledOriginalParentGroups.remove(nested.id);
+          for (final entry in nested.entries) {
+            _details.remove(entry.id);
+            _recycledOriginalGroups.remove(entry.id);
+          }
+        }
+        _dirty = true;
+        return vault;
+      }
+    }
+    throw VaultRepositoryException('Group not found: $groupId');
   }
 
   @override
@@ -539,6 +682,8 @@ class MockVaultRepository implements VaultRepository {
   Future<void> close() async {
     _vault = null;
     _details.clear();
+    _recycledOriginalGroups.clear();
+    _recycledOriginalParentGroups.clear();
     _dirty = false;
   }
 
@@ -565,6 +710,22 @@ class MockVaultRepository implements VaultRepository {
         return;
       }
     }
+  }
+
+  GroupNode _ensureRecycleBin(OpenedVault vault) {
+    final existing = vault.groupTree.flatten().where((g) => g.isRecycleBin);
+    if (existing.isNotEmpty) {
+      return existing.first;
+    }
+    final recycleBin = GroupNode(
+      id: 'group-recycle-bin',
+      name: 'Recycle Bin',
+      isRecycleBin: true,
+      entries: [],
+      groups: [],
+    );
+    vault.groupTree.groups.add(recycleBin);
+    return recycleBin;
   }
 }
 

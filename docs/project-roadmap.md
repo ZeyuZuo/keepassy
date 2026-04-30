@@ -242,17 +242,21 @@ Acceptance:
 
 Goal: make delete recoverable through KeePass-compatible Recycle Bin semantics.
 
-- [ ] Identify or create the Recycle Bin group.
-- [ ] Track original entry group metadata for reliable restore.
-- [ ] Move normal deletes to Recycle Bin instead of hard-deleting.
-- [ ] Add restore, permanent delete, and empty-bin actions.
-- [ ] Add backend, FFI, repository, and UI tests.
+- [x] Identify or create the Recycle Bin group.
+- [x] Track original entry group metadata for reliable restore.
+- [x] Move normal deletes to Recycle Bin instead of hard-deleting.
+- [x] Move normal group deletes to Recycle Bin instead of hard-deleting.
+- [x] Add restore, permanent delete, and empty-bin actions.
+- [x] Save reuses the credentials already supplied during unlock/create.
+- [x] Add backend, FFI, repository, and UI tests.
 
 Acceptance:
 
-- [ ] Accidentally deleted entries can be restored to their original group when
+- [x] Accidentally deleted entries can be restored to their original group when
       possible.
-- [ ] Permanent deletion is explicit and confirmed.
+- [x] Accidentally deleted groups can be restored to their original parent when
+      possible.
+- [x] Permanent deletion is explicit and confirmed.
 
 ## Phase P5: Desktop Release Quality
 

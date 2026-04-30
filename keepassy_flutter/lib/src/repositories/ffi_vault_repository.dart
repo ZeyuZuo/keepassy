@@ -201,6 +201,16 @@ class FfiVaultRepository implements VaultRepository {
     _deleteEntryJson = _lib.lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
       'keepassy_delete_entry_json',
     );
+    _restoreEntryJson = _lib.lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+      'keepassy_restore_entry_json',
+    );
+    _permanentlyDeleteEntryJson = _lib
+        .lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+          'keepassy_permanently_delete_entry_json',
+        );
+    _emptyRecycleBinJson = _lib.lookupFunction<_IsDirtyNative, _IsDirtyDart>(
+      'keepassy_empty_recycle_bin_json',
+    );
     _isDirty = _lib.lookupFunction<_IsDirtyNative, _IsDirtyDart>(
       'keepassy_is_dirty',
     );
@@ -251,6 +261,13 @@ class FfiVaultRepository implements VaultRepository {
     _deleteGroupJson = _lib.lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
       'keepassy_delete_group_json',
     );
+    _restoreGroupJson = _lib.lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+      'keepassy_restore_group_json',
+    );
+    _permanentlyDeleteGroupJson = _lib
+        .lookupFunction<_JsonWithIdNative, _JsonWithIdDart>(
+          'keepassy_permanently_delete_group_json',
+        );
   }
 
   final DynamicLibrary _lib;
@@ -266,6 +283,9 @@ class FfiVaultRepository implements VaultRepository {
   late final _JsonWithRequestDart _createEntryJson;
   late final _JsonWithRequestDart _updateEntryJson;
   late final _JsonWithIdDart _deleteEntryJson;
+  late final _JsonWithIdDart _restoreEntryJson;
+  late final _JsonWithIdDart _permanentlyDeleteEntryJson;
+  late final _IsDirtyDart _emptyRecycleBinJson;
   late final _IsDirtyDart _isDirty;
   late final _SaveDart _save;
   late final _ChangePasswordDart _changePassword;
@@ -280,6 +300,8 @@ class FfiVaultRepository implements VaultRepository {
   late final _JsonWithRequestDart _createGroupJson;
   late final _JsonWithRequestDart _renameGroupJson;
   late final _JsonWithIdDart _deleteGroupJson;
+  late final _JsonWithIdDart _restoreGroupJson;
+  late final _JsonWithIdDart _permanentlyDeleteGroupJson;
 
   @override
   Future<OpenedVault> openLocal({
@@ -453,15 +475,50 @@ class FfiVaultRepository implements VaultRepository {
   }
 
   @override
-  Future<void> deleteEntry(String entryId) async {
+  Future<OpenedVault> deleteEntry(String entryId) async {
     final session = _requireSession();
     final idPtr = entryId.toNativeUtf8();
     try {
       final result = _deleteEntryJson(session, idPtr);
-      _readResult(result);
+      final json = _readJsonObject(result);
+      return OpenedVault.fromJson(json);
     } finally {
       calloc.free(idPtr);
     }
+  }
+
+  @override
+  Future<OpenedVault> restoreEntry(String entryId) async {
+    final session = _requireSession();
+    final idPtr = entryId.toNativeUtf8();
+    try {
+      final result = _restoreEntryJson(session, idPtr);
+      final json = _readJsonObject(result);
+      return OpenedVault.fromJson(json);
+    } finally {
+      calloc.free(idPtr);
+    }
+  }
+
+  @override
+  Future<OpenedVault> permanentlyDeleteEntry(String entryId) async {
+    final session = _requireSession();
+    final idPtr = entryId.toNativeUtf8();
+    try {
+      final result = _permanentlyDeleteEntryJson(session, idPtr);
+      final json = _readJsonObject(result);
+      return OpenedVault.fromJson(json);
+    } finally {
+      calloc.free(idPtr);
+    }
+  }
+
+  @override
+  Future<OpenedVault> emptyRecycleBin() async {
+    final session = _requireSession();
+    final result = _emptyRecycleBinJson(session);
+    final json = _readJsonObject(result);
+    return OpenedVault.fromJson(json);
   }
 
   @override
@@ -671,12 +728,39 @@ class FfiVaultRepository implements VaultRepository {
   }
 
   @override
-  Future<void> deleteGroup(String groupId) async {
+  Future<OpenedVault> deleteGroup(String groupId) async {
     final session = _requireSession();
     final idPtr = groupId.toNativeUtf8();
     try {
       final result = _deleteGroupJson(session, idPtr);
-      _readResult(result);
+      final json = _readJsonObject(result);
+      return OpenedVault.fromJson(json);
+    } finally {
+      calloc.free(idPtr);
+    }
+  }
+
+  @override
+  Future<OpenedVault> restoreGroup(String groupId) async {
+    final session = _requireSession();
+    final idPtr = groupId.toNativeUtf8();
+    try {
+      final result = _restoreGroupJson(session, idPtr);
+      final json = _readJsonObject(result);
+      return OpenedVault.fromJson(json);
+    } finally {
+      calloc.free(idPtr);
+    }
+  }
+
+  @override
+  Future<OpenedVault> permanentlyDeleteGroup(String groupId) async {
+    final session = _requireSession();
+    final idPtr = groupId.toNativeUtf8();
+    try {
+      final result = _permanentlyDeleteGroupJson(session, idPtr);
+      final json = _readJsonObject(result);
+      return OpenedVault.fromJson(json);
     } finally {
       calloc.free(idPtr);
     }

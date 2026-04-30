@@ -48,103 +48,19 @@ class VaultPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.initialVault,
+    required this.masterPassword,
     this.keyfilePath,
     this.settingsService,
   });
 
   final VaultRepository repository;
   final OpenedVault initialVault;
+  final String masterPassword;
   final String? keyfilePath;
   final SettingsService? settingsService;
 
   @override
   State<VaultPage> createState() => _VaultPageState();
-}
-
-class _SaveVaultDialogResult {
-  const _SaveVaultDialogResult({required this.password, this.keyfilePath});
-
-  final String password;
-  final String? keyfilePath;
-}
-
-class _SaveVaultDialog extends StatefulWidget {
-  const _SaveVaultDialog({this.initialKeyfilePath});
-
-  final String? initialKeyfilePath;
-
-  @override
-  State<_SaveVaultDialog> createState() => _SaveVaultDialogState();
-}
-
-class _SaveVaultDialogState extends State<_SaveVaultDialog> {
-  final _passwordCtrl = TextEditingController();
-  final _keyfileCtrl = TextEditingController();
-
-  bool get _hasKeyfile => widget.initialKeyfilePath != null;
-
-  @override
-  void dispose() {
-    _passwordCtrl.dispose();
-    _keyfileCtrl.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final keyfileText = _keyfileCtrl.text.trim();
-    Navigator.of(context).pop(
-      _SaveVaultDialogResult(
-        password: _passwordCtrl.text,
-        keyfilePath: _hasKeyfile
-            ? (keyfileText.isNotEmpty ? keyfileText : widget.initialKeyfilePath)
-            : null,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Save vault'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _passwordCtrl,
-              obscureText: true,
-              decoration: InputDecoration(
-                labelText: _hasKeyfile
-                    ? 'Master password (optional)'
-                    : 'Master password',
-              ),
-              autofocus: true,
-              onSubmitted: (_) => _submit(),
-            ),
-            if (_hasKeyfile) ...[
-              const SizedBox(height: 14),
-              TextField(
-                controller: _keyfileCtrl,
-                decoration: InputDecoration(
-                  labelText: 'Keyfile path',
-                  hintText: widget.initialKeyfilePath,
-                  prefixIcon: const Icon(Icons.insert_drive_file_outlined),
-                ),
-                onSubmitted: (_) => _submit(),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _submit, child: const Text('Save')),
-      ],
-    );
-  }
 }
 
 class _VaultPageState extends State<VaultPage> {
@@ -173,6 +89,8 @@ class _VaultPageState extends State<VaultPage> {
   final Set<String> _selectedEntryIds = {};
   final Set<String> _visibleCustomFields = {};
   late int _autoLockMinutes;
+  late String _saveMasterPassword;
+  String? _saveKeyfilePath;
 
   // Edit form controllers
   final _editTitleController = TextEditingController();
@@ -186,6 +104,8 @@ class _VaultPageState extends State<VaultPage> {
     super.initState();
     final svc = widget.settingsService;
     _autoLockMinutes = svc != null ? svc.settings.autoLockMinutes : 5;
+    _saveMasterPassword = widget.masterPassword;
+    _saveKeyfilePath = widget.keyfilePath;
     _groupTree = widget.initialVault.groupTree;
     _selectedGroup = _groupTree;
     if (_selectedGroup.entries.isNotEmpty) {
@@ -279,6 +199,66 @@ class _VaultPageState extends State<VaultPage> {
     if (group.entries.isNotEmpty) {
       _selectEntry(group.entries.first);
     }
+  }
+
+  void _replaceVaultSnapshot(
+    OpenedVault vault, {
+    String? selectedGroupId,
+    String? selectedEntryId,
+  }) {
+    _groupTree = vault.groupTree;
+    _selectedGroup =
+        _findGroupById(_groupTree, selectedGroupId ?? _selectedGroup.id) ??
+        _groupTree;
+    _selectedEntry = selectedEntryId == null
+        ? null
+        : _findEntryInGroup(_selectedGroup, selectedEntryId);
+    if (_selectedEntry == null) {
+      _detail = null;
+      _editing = false;
+      _showHistory = false;
+      _history = null;
+    }
+    _selectedEntryIds.removeWhere(
+      (id) => _findGroupContainingEntry(_groupTree, id) == null,
+    );
+  }
+
+  GroupNode? _findGroupById(GroupNode root, String id) {
+    for (final group in root.flatten()) {
+      if (group.id == id) return group;
+    }
+    return null;
+  }
+
+  GroupNode? _findGroupContainingEntry(GroupNode root, String entryId) {
+    for (final group in root.flatten()) {
+      if (group.entries.any((entry) => entry.id == entryId)) {
+        return group;
+      }
+    }
+    return null;
+  }
+
+  EntrySummary? _findEntryInGroup(GroupNode group, String entryId) {
+    for (final entry in group.entries) {
+      if (entry.id == entryId) return entry;
+    }
+    return null;
+  }
+
+  bool _isGroupInRecycleBin(GroupNode group) {
+    for (final candidate in _groupTree.flatten()) {
+      if (candidate.isRecycleBin) {
+        return _containsGroup(candidate, group.id);
+      }
+    }
+    return false;
+  }
+
+  bool _containsGroup(GroupNode root, String groupId) {
+    if (root.id == groupId) return true;
+    return root.groups.any((child) => _containsGroup(child, groupId));
   }
 
   Future<void> _createEntry(CreateEntryRequest request) async {
@@ -381,8 +361,10 @@ class _VaultPageState extends State<VaultPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete entry'),
-        content: Text('Delete "${_detail?.displayTitle ?? entryId}"?'),
+        title: const Text('Move entry to recycle bin'),
+        content: Text(
+          'Move "${_detail?.displayTitle ?? entryId}" to Recycle Bin?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -390,7 +372,7 @@ class _VaultPageState extends State<VaultPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
+            child: const Text('Move'),
           ),
         ],
       ),
@@ -399,15 +381,115 @@ class _VaultPageState extends State<VaultPage> {
     if (confirmed != true) return;
 
     try {
-      await widget.repository.deleteEntry(entryId);
+      final snapshot = await widget.repository.deleteEntry(entryId);
       if (!mounted) return;
       setState(() {
+        _replaceVaultSnapshot(snapshot, selectedGroupId: _selectedGroup.id);
         _dirty = true;
-        _selectedEntry = null;
-        _detail = null;
-        _editing = false;
       });
-      _refreshGroup(_selectedGroup.id);
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
+  Future<void> _restoreEntry() async {
+    final entryId = _selectedEntry?.id;
+    if (entryId == null) return;
+    try {
+      final snapshot = await widget.repository.restoreEntry(entryId);
+      if (!mounted) return;
+      final targetGroup = _findGroupContainingEntry(
+        snapshot.groupTree,
+        entryId,
+      );
+      setState(() {
+        _replaceVaultSnapshot(
+          snapshot,
+          selectedGroupId: targetGroup?.id,
+          selectedEntryId: entryId,
+        );
+        _dirty = true;
+      });
+      final restored = _selectedEntry;
+      if (restored != null) {
+        _selectEntry(restored);
+      }
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
+  Future<void> _permanentlyDeleteEntry() async {
+    final entryId = _selectedEntry?.id;
+    if (entryId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Permanently delete entry'),
+        content: Text(
+          'Permanently delete "${_detail?.displayTitle ?? entryId}"? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete permanently'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final snapshot = await widget.repository.permanentlyDeleteEntry(entryId);
+      if (!mounted) return;
+      setState(() {
+        _replaceVaultSnapshot(snapshot, selectedGroupId: _selectedGroup.id);
+        _dirty = true;
+      });
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(err.toString())));
+    }
+  }
+
+  Future<void> _emptyRecycleBin() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Empty recycle bin'),
+        content: const Text('Permanently delete all entries in Recycle Bin?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Empty'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final snapshot = await widget.repository.emptyRecycleBin();
+      if (!mounted) return;
+      setState(() {
+        _replaceVaultSnapshot(snapshot, selectedGroupId: _selectedGroup.id);
+        _dirty = true;
+        _selectedEntryIds.clear();
+      });
     } on Object catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -417,18 +499,6 @@ class _VaultPageState extends State<VaultPage> {
   }
 
   Future<void> _saveVault() async {
-    final result = await showDialog<_SaveVaultDialogResult>(
-      context: context,
-      builder: (context) =>
-          _SaveVaultDialog(initialKeyfilePath: widget.keyfilePath),
-    );
-
-    if (result == null) return;
-    if (result.password.isEmpty &&
-        (result.keyfilePath == null || result.keyfilePath!.trim().isEmpty)) {
-      return;
-    }
-
     setState(() {
       _saving = true;
       _saveError = null;
@@ -436,8 +506,8 @@ class _VaultPageState extends State<VaultPage> {
 
     try {
       await widget.repository.save(
-        masterPassword: result.password,
-        keyfilePath: result.keyfilePath,
+        masterPassword: _saveMasterPassword,
+        keyfilePath: _saveKeyfilePath,
       );
       if (!mounted) return;
       setState(() {
@@ -1046,15 +1116,21 @@ class _VaultPageState extends State<VaultPage> {
     );
     ctrl.dispose();
     if (name == null || name.isEmpty) return;
+    final parent = _isGroupInRecycleBin(_selectedGroup)
+        ? _groupTree
+        : _selectedGroup;
     try {
       final group = await widget.repository.createGroup(
-        parentId: _selectedGroup.id,
+        parentId: parent.id,
         name: name,
       );
       if (!mounted) return;
       setState(() {
         _dirty = true;
-        _selectedGroup.groups.add(group);
+        parent.groups.add(group);
+        _selectedGroup = group;
+        _selectedEntry = null;
+        _detail = null;
       });
     } on Object catch (err) {
       if (!mounted) return;
@@ -1114,7 +1190,7 @@ class _VaultPageState extends State<VaultPage> {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text('Delete "${group.name}"?'),
+          title: Text('Move "${group.name}" to recycle bin?'),
           content: Text(
             'This group contains ${group.totalEntryCount} entries and ${group.groups.length} subgroups.',
           ),
@@ -1125,7 +1201,7 @@ class _VaultPageState extends State<VaultPage> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Delete'),
+              child: const Text('Move'),
             ),
           ],
         ),
@@ -1133,16 +1209,61 @@ class _VaultPageState extends State<VaultPage> {
       if (confirmed != true) return;
     }
     try {
-      await widget.repository.deleteGroup(group.id);
+      final snapshot = await widget.repository.deleteGroup(group.id);
       if (!mounted) return;
       setState(() {
+        _replaceVaultSnapshot(snapshot, selectedGroupId: _groupTree.id);
         _dirty = true;
-        for (final g in _groupTree.flatten()) {
-          g.groups.removeWhere((c) => c.id == group.id);
-        }
-        _selectedGroup = _groupTree;
-        _selectedEntry = null;
-        _detail = null;
+      });
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
+  Future<void> _restoreGroupDialog(GroupNode group) async {
+    try {
+      final snapshot = await widget.repository.restoreGroup(group.id);
+      if (!mounted) return;
+      setState(() {
+        _replaceVaultSnapshot(snapshot, selectedGroupId: group.id);
+        _dirty = true;
+      });
+    } on Object catch (err) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('$err')));
+    }
+  }
+
+  Future<void> _permanentlyDeleteGroupDialog(GroupNode group) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Permanently delete "${group.name}"?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete permanently'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final snapshot = await widget.repository.permanentlyDeleteGroup(group.id);
+      if (!mounted) return;
+      setState(() {
+        _replaceVaultSnapshot(snapshot, selectedGroupId: _groupTree.id);
+        _dirty = true;
       });
     } on Object catch (err) {
       if (!mounted) return;
@@ -1155,7 +1276,10 @@ class _VaultPageState extends State<VaultPage> {
   Future<void> _moveEntryDialog() async {
     final entry = _selectedEntry;
     if (entry == null) return;
-    final groups = _groupTree.flatten().toList();
+    final groups = _groupTree
+        .flatten()
+        .where((group) => !_isGroupInRecycleBin(group))
+        .toList();
     final target = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
@@ -1198,8 +1322,16 @@ class _VaultPageState extends State<VaultPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete selected entries'),
-        content: Text('Delete ${_selectedEntryIds.length} entries?'),
+        title: Text(
+          _selectedGroup.isRecycleBin
+              ? 'Permanently delete selected entries'
+              : 'Move selected entries to recycle bin',
+        ),
+        content: Text(
+          _selectedGroup.isRecycleBin
+              ? 'Permanently delete ${_selectedEntryIds.length} entries?'
+              : 'Move ${_selectedEntryIds.length} entries to Recycle Bin?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -1207,23 +1339,26 @@ class _VaultPageState extends State<VaultPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: Text(_selectedGroup.isRecycleBin ? 'Delete' : 'Move'),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
+    OpenedVault? snapshot;
     for (final id in _selectedEntryIds.toList()) {
       try {
-        await widget.repository.deleteEntry(id);
+        snapshot = await widget.repository.deleteEntry(id);
       } catch (_) {}
     }
     if (!mounted) return;
     setState(() {
+      if (snapshot != null) {
+        _replaceVaultSnapshot(snapshot, selectedGroupId: _selectedGroup.id);
+      }
       _dirty = true;
       _selectedEntryIds.clear();
     });
-    _refreshGroup(_selectedGroup.id);
   }
 
   Future<void> _changePasswordDialog() async {
@@ -1271,9 +1406,10 @@ class _VaultPageState extends State<VaultPage> {
       await widget.repository.changePassword(
         oldPassword: oldPw,
         newPassword: newPw,
-        keyfilePath: widget.keyfilePath,
+        keyfilePath: _saveKeyfilePath,
       );
       if (!mounted) return;
+      _saveMasterPassword = newPw;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Password changed')));
@@ -1756,6 +1892,8 @@ class _VaultPageState extends State<VaultPage> {
                         onCreateGroup: _createGroupDialog,
                         onRenameGroup: _renameGroupDialog,
                         onDeleteGroup: _deleteGroupDialog,
+                        onRestoreGroup: _restoreGroupDialog,
+                        onPermanentDeleteGroup: _permanentlyDeleteGroupDialog,
                       ),
                     ),
                     const Divider(),
@@ -1779,7 +1917,16 @@ class _VaultPageState extends State<VaultPage> {
                         ),
                         sortMode: _sortMode,
                         onSortModeChanged: (v) => setState(() => _sortMode = v),
-                        onCreateEntry: _showCreateDialog,
+                        onCreateEntry: _isGroupInRecycleBin(_selectedGroup)
+                            ? null
+                            : _showCreateDialog,
+                        onEmptyRecycleBin:
+                            _selectedGroup.isRecycleBin &&
+                                _selectedGroup.totalEntryCount +
+                                        _selectedGroup.groups.length >
+                                    0
+                            ? _emptyRecycleBin
+                            : null,
                       ),
                     ),
                     const Divider(),
@@ -1802,6 +1949,9 @@ class _VaultPageState extends State<VaultPage> {
                         onSaveEdit: _saveEdit,
                         onCancelEdit: _cancelEdit,
                         onDelete: _deleteEntry,
+                        onRestore: _restoreEntry,
+                        onPermanentDelete: _permanentlyDeleteEntry,
+                        inRecycleBin: _isGroupInRecycleBin(_selectedGroup),
                         onGeneratePassword: _showPasswordGenerator,
                         onDownloadAttachment: _downloadAttachment,
                         onAddAttachment: _addAttachment,
@@ -1855,6 +2005,8 @@ class _VaultPageState extends State<VaultPage> {
                       onCreateGroup: _createGroupDialog,
                       onRenameGroup: _renameGroupDialog,
                       onDeleteGroup: _deleteGroupDialog,
+                      onRestoreGroup: _restoreGroupDialog,
+                      onPermanentDeleteGroup: _permanentlyDeleteGroupDialog,
                     ),
                   ),
                   const VerticalDivider(width: 1),
@@ -1878,6 +2030,16 @@ class _VaultPageState extends State<VaultPage> {
                       ),
                       sortMode: _sortMode,
                       onSortModeChanged: (v) => setState(() => _sortMode = v),
+                      onCreateEntry: _isGroupInRecycleBin(_selectedGroup)
+                          ? null
+                          : _showCreateDialog,
+                      onEmptyRecycleBin:
+                          _selectedGroup.isRecycleBin &&
+                              _selectedGroup.totalEntryCount +
+                                      _selectedGroup.groups.length >
+                                  0
+                          ? _emptyRecycleBin
+                          : null,
                     ),
                   ),
                   const VerticalDivider(width: 1),
@@ -1899,6 +2061,9 @@ class _VaultPageState extends State<VaultPage> {
                       onSaveEdit: _saveEdit,
                       onCancelEdit: _cancelEdit,
                       onDelete: _deleteEntry,
+                      onRestore: _restoreEntry,
+                      onPermanentDelete: _permanentlyDeleteEntry,
+                      inRecycleBin: _isGroupInRecycleBin(_selectedGroup),
                       onGeneratePassword: _showPasswordGenerator,
                       onDownloadAttachment: _downloadAttachment,
                       onAddAttachment: _addAttachment,
@@ -2067,7 +2232,7 @@ class _MetadataLine extends StatelessWidget {
   }
 }
 
-class _GroupRail extends StatelessWidget {
+class _GroupRail extends StatefulWidget {
   const _GroupRail({
     required this.root,
     required this.selectedGroup,
@@ -2076,6 +2241,8 @@ class _GroupRail extends StatelessWidget {
     this.onCreateGroup,
     this.onRenameGroup,
     this.onDeleteGroup,
+    this.onRestoreGroup,
+    this.onPermanentDeleteGroup,
   });
 
   final GroupNode root;
@@ -2085,37 +2252,44 @@ class _GroupRail extends StatelessWidget {
   final VoidCallback? onCreateGroup;
   final void Function(GroupNode)? onRenameGroup;
   final void Function(GroupNode)? onDeleteGroup;
+  final void Function(GroupNode)? onRestoreGroup;
+  final void Function(GroupNode)? onPermanentDeleteGroup;
+
+  @override
+  State<_GroupRail> createState() => _GroupRailState();
+}
+
+class _GroupRailState extends State<_GroupRail> {
+  final Set<String> _collapsedGroupIds = {};
 
   @override
   Widget build(BuildContext context) {
-    final groups = root.flatten().toList(growable: false);
+    final groups = _groupItems(widget.root).toList(growable: false);
 
-    Widget header;
-    if (onCreateGroup != null && !horizontal) {
-      header = Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
-        child: Row(
-          children: [
-            Text(
-              'Groups',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+    final header = !widget.horizontal
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
+            child: Row(
+              children: [
+                Text(
+                  'Groups',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const Spacer(),
+                if (widget.onCreateGroup != null)
+                  IconButton(
+                    tooltip: 'New group',
+                    onPressed: widget.onCreateGroup,
+                    icon: const Icon(Icons.add, size: 18),
+                  ),
+              ],
             ),
-            const Spacer(),
-            IconButton(
-              tooltip: 'New group',
-              onPressed: onCreateGroup,
-              icon: const Icon(Icons.add, size: 18),
-            ),
-          ],
-        ),
-      );
-    } else {
-      header = const SizedBox.shrink();
-    }
+          )
+        : const SizedBox.shrink();
 
-    if (horizontal) {
+    if (widget.horizontal) {
       return Column(
         children: [
           header,
@@ -2126,14 +2300,24 @@ class _GroupRail extends StatelessWidget {
               itemCount: groups.length,
               separatorBuilder: (_, _) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
+                final item = groups[index];
                 return SizedBox(
                   width: 180,
                   child: _GroupButton(
-                    group: groups[index],
-                    selected: groups[index].id == selectedGroup.id,
-                    onSelected: onSelected,
-                    onRename: onRenameGroup,
-                    onDelete: onDeleteGroup,
+                    group: item.group,
+                    depth: item.depth,
+                    selected: item.group.id == widget.selectedGroup.id,
+                    onSelected: widget.onSelected,
+                    inRecycleBin: item.inRecycleBin,
+                    canToggle: item.canToggle,
+                    collapsed: item.collapsed,
+                    onToggleCollapsed: item.canToggle
+                        ? () => _toggleCollapsed(item.group)
+                        : null,
+                    onRename: widget.onRenameGroup,
+                    onDelete: widget.onDeleteGroup,
+                    onRestore: widget.onRestoreGroup,
+                    onPermanentDelete: widget.onPermanentDeleteGroup,
                   ),
                 );
               },
@@ -2152,12 +2336,22 @@ class _GroupRail extends StatelessWidget {
             itemCount: groups.length,
             separatorBuilder: (_, _) => const SizedBox(height: 6),
             itemBuilder: (context, index) {
+              final item = groups[index];
               return _GroupButton(
-                group: groups[index],
-                selected: groups[index].id == selectedGroup.id,
-                onSelected: onSelected,
-                onRename: onRenameGroup,
-                onDelete: onDeleteGroup,
+                group: item.group,
+                depth: item.depth,
+                selected: item.group.id == widget.selectedGroup.id,
+                onSelected: widget.onSelected,
+                inRecycleBin: item.inRecycleBin,
+                canToggle: item.canToggle,
+                collapsed: item.collapsed,
+                onToggleCollapsed: item.canToggle
+                    ? () => _toggleCollapsed(item.group)
+                    : null,
+                onRename: widget.onRenameGroup,
+                onDelete: widget.onDeleteGroup,
+                onRestore: widget.onRestoreGroup,
+                onPermanentDelete: widget.onPermanentDeleteGroup,
               );
             },
           ),
@@ -2165,14 +2359,66 @@ class _GroupRail extends StatelessWidget {
       ],
     );
   }
+
+  void _toggleCollapsed(GroupNode group) {
+    setState(() {
+      if (_collapsedGroupIds.contains(group.id)) {
+        _collapsedGroupIds.remove(group.id);
+      } else {
+        _collapsedGroupIds.add(group.id);
+      }
+    });
+  }
+
+  Iterable<_GroupListItem> _groupItems(
+    GroupNode group, [
+    int depth = 0,
+    bool inRecycleBin = false,
+  ]) sync* {
+    final currentInRecycleBin = inRecycleBin || group.isRecycleBin;
+    final canToggle = group.groups.isNotEmpty;
+    final collapsed = canToggle && _collapsedGroupIds.contains(group.id);
+    yield _GroupListItem(
+      group: group,
+      depth: depth,
+      inRecycleBin: currentInRecycleBin,
+      canToggle: canToggle,
+      collapsed: collapsed,
+    );
+    if (collapsed) {
+      return;
+    }
+    for (final child in group.groups) {
+      yield* _groupItems(child, depth + 1, currentInRecycleBin);
+    }
+  }
+}
+
+class _GroupListItem {
+  const _GroupListItem({
+    required this.group,
+    required this.depth,
+    required this.inRecycleBin,
+    required this.canToggle,
+    required this.collapsed,
+  });
+
+  final GroupNode group;
+  final int depth;
+  final bool inRecycleBin;
+  final bool canToggle;
+  final bool collapsed;
 }
 
 void _showGroupContextMenu(
   BuildContext context,
   Offset position,
   GroupNode group,
-  void Function(GroupNode) onRename,
-  void Function(GroupNode) onDelete,
+  bool inRecycleBin,
+  void Function(GroupNode)? onRename,
+  void Function(GroupNode)? onDelete,
+  void Function(GroupNode)? onRestore,
+  void Function(GroupNode)? onPermanentDelete,
 ) {
   showMenu<String>(
     context: context,
@@ -2183,36 +2429,68 @@ void _showGroupContextMenu(
       position.dy,
     ),
     items: [
-      PopupMenuItem<String>(
-        value: 'rename',
-        child: const ListTile(
-          leading: Icon(Icons.edit),
-          title: Text('Rename'),
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-        ),
-      ),
-      PopupMenuItem<String>(
-        value: 'delete',
-        child: ListTile(
-          leading: Icon(
-            Icons.delete_outline,
-            color: Theme.of(context).colorScheme.error,
+      if (!inRecycleBin && onRename != null)
+        PopupMenuItem<String>(
+          value: 'rename',
+          child: const ListTile(
+            leading: Icon(Icons.edit),
+            title: Text('Rename'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
           ),
-          title: Text(
-            'Delete',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-          dense: true,
-          contentPadding: EdgeInsets.zero,
         ),
-      ),
+      if (!inRecycleBin && onDelete != null)
+        PopupMenuItem<String>(
+          value: 'delete',
+          child: ListTile(
+            leading: Icon(
+              Icons.delete_outline,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            title: Text(
+              'Delete',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      if (inRecycleBin && onRestore != null)
+        PopupMenuItem<String>(
+          value: 'restore',
+          child: const ListTile(
+            leading: Icon(Icons.restore_from_trash_outlined),
+            title: Text('Restore'),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      if (inRecycleBin && onPermanentDelete != null)
+        PopupMenuItem<String>(
+          value: 'permanent-delete',
+          child: ListTile(
+            leading: Icon(
+              Icons.delete_forever,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            title: Text(
+              'Delete permanently',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
     ],
   ).then((value) {
     if (value == 'rename') {
-      onRename(group);
+      onRename?.call(group);
     } else if (value == 'delete') {
-      onDelete(group);
+      onDelete?.call(group);
+    } else if (value == 'restore') {
+      onRestore?.call(group);
+    } else if (value == 'permanent-delete') {
+      onPermanentDelete?.call(group);
     }
   });
 }
@@ -2220,40 +2498,105 @@ void _showGroupContextMenu(
 class _GroupButton extends StatelessWidget {
   const _GroupButton({
     required this.group,
+    required this.depth,
     required this.selected,
     required this.onSelected,
+    required this.inRecycleBin,
+    required this.canToggle,
+    required this.collapsed,
+    this.onToggleCollapsed,
     this.onRename,
     this.onDelete,
+    this.onRestore,
+    this.onPermanentDelete,
   });
 
   final GroupNode group;
+  final int depth;
   final bool selected;
+  final bool inRecycleBin;
+  final bool canToggle;
+  final bool collapsed;
   final ValueChanged<GroupNode> onSelected;
+  final VoidCallback? onToggleCollapsed;
   final void Function(GroupNode)? onRename;
   final void Function(GroupNode)? onDelete;
+  final void Function(GroupNode)? onRestore;
+  final void Function(GroupNode)? onPermanentDelete;
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final entryLabel = group.entryCount == 1 ? 'entry' : 'entries';
+    final isRecycledGroup = inRecycleBin && !group.isRecycleBin;
+    final isRecycleRoot = group.isRecycleBin;
+    final horizontalInset = 12.0 + (depth.clamp(0, 4) * 14.0);
+    final recycleAccent = colorScheme.error;
+    final recycleContainer = colorScheme.errorContainer.withValues(
+      alpha: selected ? 0.55 : 0.18,
+    );
+    final backgroundColor = selected
+        ? isRecycleRoot
+              ? recycleContainer
+              : colorScheme.primary.withValues(alpha: 0.11)
+        : isRecycleRoot
+        ? recycleContainer
+        : Colors.transparent;
+    final iconColor = selected
+        ? isRecycleRoot
+              ? colorScheme.onErrorContainer
+              : colorScheme.primary
+        : isRecycleRoot || isRecycledGroup
+        ? recycleAccent
+        : colorScheme.onSurfaceVariant;
+    final titleColor = isRecycleRoot
+        ? (selected ? colorScheme.onErrorContainer : recycleAccent)
+        : null;
+    final subtitle = isRecycleRoot
+        ? '${group.totalEntryCount} ${group.totalEntryCount == 1 ? 'entry' : 'entries'}, '
+              '${group.groups.length} ${group.groups.length == 1 ? 'group' : 'groups'}'
+        : isRecycledGroup
+        ? '${group.entryCount} $entryLabel in Recycle Bin'
+        : '${group.entryCount} $entryLabel';
 
     return Material(
-      color: selected
-          ? colorScheme.primary.withValues(alpha: 0.11)
-          : Colors.transparent,
+      color: backgroundColor,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () => onSelected(group),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: EdgeInsets.fromLTRB(horizontalInset, 10, 12, 10),
           child: Row(
             children: [
+              SizedBox.square(
+                dimension: 24,
+                child: canToggle
+                    ? IconButton(
+                        tooltip: collapsed ? 'Expand group' : 'Collapse group',
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onToggleCollapsed,
+                        icon: Icon(
+                          collapsed
+                              ? Icons.keyboard_arrow_right
+                              : Icons.keyboard_arrow_down,
+                          size: 20,
+                          color: iconColor,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              const SizedBox(width: 4),
               Icon(
-                group.groups.isEmpty
+                group.isRecycleBin
+                    ? Icons.delete_outline
+                    : isRecycledGroup
+                    ? Icons.folder_delete_outlined
+                    : group.groups.isEmpty
                     ? Icons.folder_outlined
                     : Icons.folder_copy_outlined,
-                color: selected ? colorScheme.primary : null,
+                color: iconColor,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -2264,26 +2607,44 @@ class _GroupButton extends StatelessWidget {
                     Text(
                       group.name,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        color: titleColor,
+                        fontWeight: isRecycleRoot
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                      ),
                     ),
                     Text(
-                      '${group.entryCount} $entryLabel',
+                      subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                        color: isRecycleRoot
+                            ? (selected
+                                  ? colorScheme.onErrorContainer
+                                  : recycleAccent)
+                            : isRecycledGroup
+                            ? colorScheme.error
+                            : colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
               ),
-              if (group.id != 'root' && onRename != null && onDelete != null)
+              if (group.id != 'root' &&
+                  !group.isRecycleBin &&
+                  ((inRecycleBin &&
+                          (onRestore != null || onPermanentDelete != null)) ||
+                      (!inRecycleBin && onRename != null && onDelete != null)))
                 GestureDetector(
                   onTapDown: (details) {
                     _showGroupContextMenu(
                       context,
                       details.globalPosition,
                       group,
-                      onRename!,
-                      onDelete!,
+                      inRecycleBin,
+                      onRename,
+                      onDelete,
+                      onRestore,
+                      onPermanentDelete,
                     );
                   },
                   child: Icon(
@@ -2315,6 +2676,7 @@ class _EntryList extends StatelessWidget {
     this.sortMode = 0,
     this.onSortModeChanged,
     this.onCreateEntry,
+    this.onEmptyRecycleBin,
   });
 
   final GroupNode group;
@@ -2330,6 +2692,7 @@ class _EntryList extends StatelessWidget {
   final int sortMode;
   final ValueChanged<int>? onSortModeChanged;
   final VoidCallback? onCreateEntry;
+  final VoidCallback? onEmptyRecycleBin;
 
   @override
   Widget build(BuildContext context) {
@@ -2355,6 +2718,12 @@ class _EntryList extends StatelessWidget {
                       tooltip: 'Create entry',
                       onPressed: onCreateEntry,
                       icon: const Icon(Icons.add),
+                    ),
+                  if (onEmptyRecycleBin != null)
+                    IconButton(
+                      tooltip: 'Empty recycle bin',
+                      onPressed: onEmptyRecycleBin,
+                      icon: const Icon(Icons.delete_sweep_outlined),
                     ),
                 ],
               ),
@@ -2593,6 +2962,9 @@ class _DetailPane extends StatelessWidget {
     required this.onSaveEdit,
     required this.onCancelEdit,
     required this.onDelete,
+    this.onRestore,
+    this.onPermanentDelete,
+    this.inRecycleBin = false,
     this.onGeneratePassword,
     this.onDownloadAttachment,
     this.onAddAttachment,
@@ -2631,6 +3003,9 @@ class _DetailPane extends StatelessWidget {
   final VoidCallback onSaveEdit;
   final VoidCallback onCancelEdit;
   final VoidCallback onDelete;
+  final VoidCallback? onRestore;
+  final VoidCallback? onPermanentDelete;
+  final bool inRecycleBin;
   final void Function(void Function(String))? onGeneratePassword;
   final void Function(EntrySummary, String)? onDownloadAttachment;
   final void Function(EntrySummary)? onAddAttachment;
@@ -2686,35 +3061,50 @@ class _DetailPane extends StatelessWidget {
                 ),
               ),
             ),
-            if (onMoveEntry != null)
+            if (inRecycleBin) ...[
+              if (onRestore != null)
+                IconButton(
+                  tooltip: 'Restore entry',
+                  onPressed: onRestore,
+                  icon: const Icon(Icons.restore_from_trash_outlined),
+                ),
+              if (onPermanentDelete != null)
+                IconButton(
+                  tooltip: 'Delete permanently',
+                  onPressed: onPermanentDelete,
+                  icon: Icon(Icons.delete_forever, color: colorScheme.error),
+                ),
+            ] else ...[
+              if (onMoveEntry != null)
+                IconButton(
+                  tooltip: 'Move to group',
+                  onPressed: onMoveEntry,
+                  icon: const Icon(Icons.drive_file_move_outlined),
+                ),
+              if (onDuplicateEntry != null)
+                IconButton(
+                  tooltip: 'Duplicate entry',
+                  onPressed: onDuplicateEntry,
+                  icon: const Icon(Icons.copy),
+                ),
+              if (detail.password != null && detail.password!.isNotEmpty)
+                IconButton(
+                  tooltip: 'Copy password',
+                  onPressed: () =>
+                      onCopyToClipboard?.call(detail.password!, 'Password'),
+                  icon: const Icon(Icons.key),
+                ),
               IconButton(
-                tooltip: 'Move to group',
-                onPressed: onMoveEntry,
-                icon: const Icon(Icons.drive_file_move_outlined),
+                tooltip: 'Edit entry',
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit_outlined),
               ),
-            if (onDuplicateEntry != null)
               IconButton(
-                tooltip: 'Duplicate entry',
-                onPressed: onDuplicateEntry,
-                icon: const Icon(Icons.copy),
+                tooltip: 'Delete entry',
+                onPressed: onDelete,
+                icon: Icon(Icons.delete_outline, color: colorScheme.error),
               ),
-            if (detail.password != null && detail.password!.isNotEmpty)
-              IconButton(
-                tooltip: 'Copy password',
-                onPressed: () =>
-                    onCopyToClipboard?.call(detail.password!, 'Password'),
-                icon: const Icon(Icons.key),
-              ),
-            IconButton(
-              tooltip: 'Edit entry',
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined),
-            ),
-            IconButton(
-              tooltip: 'Delete entry',
-              onPressed: onDelete,
-              icon: Icon(Icons.delete_outline, color: colorScheme.error),
-            ),
+            ],
           ],
         ),
         const SizedBox(height: 20),
@@ -2768,7 +3158,9 @@ class _DetailPane extends StatelessWidget {
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
             const Spacer(),
-            if (onAddAttachment != null && selectedEntry != null)
+            if (!inRecycleBin &&
+                onAddAttachment != null &&
+                selectedEntry != null)
               IconButton(
                 tooltip: 'Add attachment',
                 onPressed: () => onAddAttachment!(selectedEntry!),
@@ -2804,7 +3196,9 @@ class _DetailPane extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.download, size: 18),
                     ),
-                  if (onRemoveAttachment != null && selectedEntry != null)
+                  if (!inRecycleBin &&
+                      onRemoveAttachment != null &&
+                      selectedEntry != null)
                     IconButton(
                       tooltip: 'Remove ${attachment.name}',
                       onPressed: () =>
