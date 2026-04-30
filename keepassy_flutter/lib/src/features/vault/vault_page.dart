@@ -13,7 +13,6 @@ import '../unlock/unlock_page.dart';
 enum _RemoteConflictAction { keepLocal, reopenRemote }
 
 enum _MoreAction {
-  createEntry,
   remoteMetadata,
   changePassword,
   autoLock,
@@ -160,6 +159,7 @@ class _VaultPageState extends State<VaultPage> {
   Timer? _autoLockTimer;
   Timer? _inactivityTimer;
   final Set<String> _selectedEntryIds = {};
+  final Set<String> _visibleCustomFields = {};
   int _autoLockMinutes = 5;
 
   // Edit form controllers
@@ -221,6 +221,7 @@ class _VaultPageState extends State<VaultPage> {
       _detail = null;
       _loadingDetail = true;
       _passwordVisible = false;
+      _visibleCustomFields.clear();
     });
     try {
       final detail = await widget.repository.entryDetail(entry.id);
@@ -1606,8 +1607,6 @@ class _VaultPageState extends State<VaultPage> {
               icon: const Icon(Icons.more_vert),
               onSelected: (action) {
                 switch (action) {
-                  case _MoreAction.createEntry:
-                    _showCreateDialog();
                   case _MoreAction.remoteMetadata:
                     _showRemoteMetadata();
                   case _MoreAction.changePassword:
@@ -1619,15 +1618,6 @@ class _VaultPageState extends State<VaultPage> {
                 }
               },
               itemBuilder: (context) => [
-                const PopupMenuItem<_MoreAction>(
-                  value: _MoreAction.createEntry,
-                  child: ListTile(
-                    leading: Icon(Icons.add),
-                    title: Text('Create entry'),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
                 if (widget.initialVault.metadata != null)
                   const PopupMenuItem<_MoreAction>(
                     value: _MoreAction.remoteMetadata,
@@ -1704,6 +1694,18 @@ class _VaultPageState extends State<VaultPage> {
                       query: _query,
                       onQueryChanged: (value) => setState(() => _query = value),
                       onSelected: _selectEntry,
+                      searchAllGroups: _searchAllGroups,
+                      onSearchAllGroupsChanged: (v) =>
+                          setState(() => _searchAllGroups = v),
+                      selectedEntryIds: _selectedEntryIds,
+                      onToggleSelect: (id) => setState(
+                        () => _selectedEntryIds.contains(id)
+                            ? _selectedEntryIds.remove(id)
+                            : _selectedEntryIds.add(id),
+                      ),
+                      sortMode: _sortMode,
+                      onSortModeChanged: (v) => setState(() => _sortMode = v),
+                      onCreateEntry: _showCreateDialog,
                     ),
                   ),
                   const Divider(),
@@ -1732,7 +1734,29 @@ class _VaultPageState extends State<VaultPage> {
                       onRemoveAttachment: _removeAttachment,
                       onAddCustomField: _addCustomField,
                       onRemoveCustomField: _removeCustomField,
+                      onToggleCustomFieldProtect: _toggleCustomFieldProtect,
+                      onToggleHistory: _loadHistory,
+                      onViewHistoryDetail: _viewHistoryDetail,
+                      onMoveEntry: _moveEntryDialog,
+                      onDuplicateEntry: _duplicateEntry,
+                      editExpires: _editExpires,
+                      onEditExpiresChanged: (v) =>
+                          setState(() => _editExpires = v),
+                      editExpiryDateCtrl: _editExpiryDateController,
+                      showHistory: _showHistory,
+                      history: _history,
+                      loadingHistory: _loadingHistory,
                       selectedEntry: _selectedEntry,
+                      visibleCustomFields: _visibleCustomFields,
+                      onToggleCustomFieldVisibility: (key) {
+                        setState(() {
+                          if (_visibleCustomFields.contains(key)) {
+                            _visibleCustomFields.remove(key);
+                          } else {
+                            _visibleCustomFields.add(key);
+                          }
+                        });
+                      },
                     ),
                   ),
                 ],
@@ -1747,6 +1771,9 @@ class _VaultPageState extends State<VaultPage> {
                     root: _groupTree,
                     selectedGroup: _selectedGroup,
                     onSelected: _selectGroup,
+                    onCreateGroup: _createGroupDialog,
+                    onRenameGroup: _renameGroupDialog,
+                    onDeleteGroup: _deleteGroupDialog,
                   ),
                 ),
                 const VerticalDivider(width: 1),
@@ -1810,6 +1837,16 @@ class _VaultPageState extends State<VaultPage> {
                     history: _history,
                     loadingHistory: _loadingHistory,
                     selectedEntry: _selectedEntry,
+                    visibleCustomFields: _visibleCustomFields,
+                    onToggleCustomFieldVisibility: (key) {
+                      setState(() {
+                        if (_visibleCustomFields.contains(key)) {
+                          _visibleCustomFields.remove(key);
+                        } else {
+                          _visibleCustomFields.add(key);
+                        }
+                      });
+                    },
                   ),
                 ),
               ],
@@ -2126,6 +2163,53 @@ class _GroupRail extends StatelessWidget {
   }
 }
 
+void _showGroupContextMenu(
+  BuildContext context,
+  Offset position,
+  GroupNode group,
+  void Function(GroupNode) onRename,
+  void Function(GroupNode) onDelete,
+) {
+  showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(
+      position.dx,
+      position.dy,
+      position.dx,
+      position.dy,
+    ),
+    items: [
+      PopupMenuItem<String>(
+        value: 'rename',
+        child: const ListTile(
+          leading: Icon(Icons.edit),
+          title: Text('Rename'),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      PopupMenuItem<String>(
+        value: 'delete',
+        child: ListTile(
+          leading: Icon(Icons.delete_outline,
+              color: Theme.of(context).colorScheme.error),
+          title: Text('Delete',
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.error)),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+    ],
+  ).then((value) {
+    if (value == 'rename') {
+      onRename(group);
+    } else if (value == 'delete') {
+      onDelete(group);
+    }
+  });
+}
+
 class _GroupButton extends StatelessWidget {
   const _GroupButton({
     required this.group,
@@ -2185,27 +2269,21 @@ class _GroupButton extends StatelessWidget {
                 ),
               ),
               if (group.id != 'root' && onRename != null && onDelete != null)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    GestureDetector(
-                      onTap: () => onRename!(group),
-                      child: Icon(
-                        Icons.edit,
-                        size: 14,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: () => onDelete!(group),
-                      child: Icon(
-                        Icons.delete_outline,
-                        size: 14,
-                        color: colorScheme.error,
-                      ),
-                    ),
-                  ],
+                GestureDetector(
+                  onTapDown: (details) {
+                    _showGroupContextMenu(
+                      context,
+                      details.globalPosition,
+                      group,
+                      onRename!,
+                      onDelete!,
+                    );
+                  },
+                  child: Icon(
+                    Icons.more_vert,
+                    size: 16,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
             ],
           ),
@@ -2229,6 +2307,7 @@ class _EntryList extends StatelessWidget {
     this.onToggleSelect,
     this.sortMode = 0,
     this.onSortModeChanged,
+    this.onCreateEntry,
   });
 
   final GroupNode group;
@@ -2243,6 +2322,7 @@ class _EntryList extends StatelessWidget {
   final void Function(String)? onToggleSelect;
   final int sortMode;
   final ValueChanged<int>? onSortModeChanged;
+  final VoidCallback? onCreateEntry;
 
   @override
   Widget build(BuildContext context) {
@@ -2253,12 +2333,58 @@ class _EntryList extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                searchAllGroups ? 'All entries' : group.name,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      searchAllGroups ? 'All entries' : group.name,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (onCreateEntry != null)
+                    IconButton(
+                      tooltip: 'Create entry',
+                      onPressed: onCreateEntry,
+                      icon: const Icon(Icons.add),
+                    ),
+                ],
               ),
+              if (selectedEntryIds.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Text(
+                        '${selectedEntryIds.length} selected',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const Spacer(),
+                      GestureDetector(
+                        onTap: onToggleSelect != null
+                            ? () {
+                                for (final id in selectedEntryIds.toList()) {
+                                  onToggleSelect!(id);
+                                }
+                              }
+                            : null,
+                        child: Text(
+                          'Clear',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -2478,6 +2604,8 @@ class _DetailPane extends StatelessWidget {
     this.history,
     this.loadingHistory = false,
     this.selectedEntry,
+    this.visibleCustomFields = const {},
+    this.onToggleCustomFieldVisibility,
   });
 
   final EntryDetail? detail;
@@ -2512,6 +2640,8 @@ class _DetailPane extends StatelessWidget {
   final List<HistorySummary>? history;
   final bool loadingHistory;
   final EntrySummary? selectedEntry;
+  final Set<String> visibleCustomFields;
+  final void Function(String)? onToggleCustomFieldVisibility;
 
   @override
   Widget build(BuildContext context) {
@@ -2906,10 +3036,38 @@ class _DetailPane extends StatelessWidget {
     required String value,
     required bool isProtected,
   }) {
+    if (isProtected) {
+      final visible = visibleCustomFields.contains(fieldKey);
+      return _FieldLine(
+        icon: Icons.lock,
+        label: fieldKey,
+        value: visible ? value : '••••••••••••',
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (value.isNotEmpty)
+              IconButton(
+                tooltip: 'Copy $fieldKey',
+                onPressed: () => _copyToClipboard(context, value, fieldKey),
+                icon: const Icon(Icons.copy, size: 18),
+              ),
+            IconButton(
+              tooltip: visible ? 'Hide $fieldKey' : 'Show $fieldKey',
+              onPressed: () => onToggleCustomFieldVisibility?.call(fieldKey),
+              icon: Icon(
+                visible
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return _FieldLine(
-      icon: isProtected ? Icons.lock : Icons.tune_outlined,
+      icon: Icons.tune_outlined,
       label: fieldKey,
-      value: isProtected ? '[protected]' : value,
+      value: value,
       trailing: value.isNotEmpty
           ? IconButton(
               tooltip: 'Copy $fieldKey',
