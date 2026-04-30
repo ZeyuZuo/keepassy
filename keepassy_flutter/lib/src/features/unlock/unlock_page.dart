@@ -2,29 +2,60 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../repositories/vault_repository.dart';
+import '../../settings/settings_service.dart';
+import '../settings/settings_dialog.dart';
 import '../vault/vault_page.dart';
 
 enum _VaultSource { local, webDav }
 
 class UnlockPage extends StatefulWidget {
-  const UnlockPage({super.key, required this.repository});
+  const UnlockPage({super.key, required this.repository, this.settingsService});
 
   final VaultRepository repository;
+  final SettingsService? settingsService;
 
   @override
   State<UnlockPage> createState() => _UnlockPageState();
 }
 
 class _UnlockPageState extends State<UnlockPage> {
-  final _pathController = TextEditingController(
-    text: '/home/zzy/Desktop/code/KeepassY/keepass-rs/Database.kdbx',
+  late final _pathController = TextEditingController(
+    text: _initialPath(),
   );
-  final _webDavUrlController = TextEditingController();
+  late final _webDavUrlController = TextEditingController(
+    text: _initialWebDavUrl(),
+  );
   final _webDavUsernameController = TextEditingController();
   final _webDavPasswordController = TextEditingController();
   final _passwordController = TextEditingController();
   final _keyfileController = TextEditingController();
-  _VaultSource _source = _VaultSource.local;
+  late _VaultSource _source = _initialSource();
+
+  String _initialPath() {
+    final svc = widget.settingsService;
+    if (svc != null) {
+      final s = svc.settings;
+      if (s.rememberPaths && s.lastLocalPath != null) return s.lastLocalPath!;
+    }
+    return '/home/zzy/Desktop/code/KeepassY/keepass-rs/Database.kdbx';
+  }
+
+  String _initialWebDavUrl() {
+    final svc = widget.settingsService;
+    if (svc != null) {
+      final s = svc.settings;
+      if (s.rememberPaths && s.lastWebDavUrl != null) return s.lastWebDavUrl!;
+    }
+    return '';
+  }
+
+  _VaultSource _initialSource() {
+    final svc = widget.settingsService;
+    if (svc != null && svc.settings.defaultSource == 'webdav') {
+      return _VaultSource.webDav;
+    }
+    return _VaultSource.local;
+  }
   bool _useKeyfile = false;
   bool _obscurePassword = true;
   bool _obscureWebDavPassword = true;
@@ -107,12 +138,22 @@ class _UnlockPageState extends State<UnlockPage> {
       if (!mounted) {
         return;
       }
+      final svc = widget.settingsService;
+      if (svc != null && svc.settings.rememberPaths) {
+        if (_source == _VaultSource.local) {
+          svc.update((s) { s.lastLocalPath = _pathController.text.trim(); });
+        } else {
+          svc.update((s) => s.lastWebDavUrl = _webDavUrlController.text.trim());
+          // Also set default source
+        }
+      }
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
           builder: (_) => VaultPage(
             repository: widget.repository,
             initialVault: vault,
             keyfilePath: keyfilePath,
+            settingsService: svc,
           ),
         ),
       );
@@ -176,6 +217,7 @@ class _UnlockPageState extends State<UnlockPage> {
                     },
                     onClearError: () => setState(() => _error = null),
                     onOpen: _opening ? null : _openVault,
+                    settingsService: widget.settingsService,
                   );
 
                   if (compact) {
@@ -261,6 +303,7 @@ class _UnlockForm extends StatelessWidget {
     required this.onOpen,
     required this.onClearError,
     this.error,
+    this.settingsService,
   });
 
   final _VaultSource source;
@@ -281,6 +324,7 @@ class _UnlockForm extends StatelessWidget {
   final VoidCallback? onOpen;
   final VoidCallback onClearError;
   final String? error;
+  final SettingsService? settingsService;
 
   @override
   Widget build(BuildContext context) {
@@ -298,11 +342,28 @@ class _UnlockForm extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Unlock vault',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Unlock vault',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (settingsService != null)
+                  IconButton(
+                    tooltip: 'Settings',
+                    onPressed: () => showDialog<void>(
+                      context: context,
+                      builder: (_) => SettingsDialog(
+                        settingsService: settingsService!,
+                      ),
+                    ),
+                    icon: const Icon(Icons.settings_outlined),
+                  ),
+              ],
             ),
             const SizedBox(height: 20),
             SegmentedButton<_VaultSource>(

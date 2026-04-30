@@ -5,24 +5,25 @@ const _surface = Color(0xFFF6F4EF);
 const _panel = Color(0xFFFCFBF7);
 const _ink = Color(0xFF20231F);
 
-ThemeData buildKeepassYTheme() {
+ThemeData buildKeepassYTheme({Brightness brightness = Brightness.light}) {
+  final isDark = brightness == Brightness.dark;
   final scheme = ColorScheme.fromSeed(
     seedColor: _seed,
-    brightness: Brightness.light,
-    surface: _surface,
+    brightness: brightness,
+    surface: isDark ? const Color(0xFF1A1D1A) : _surface,
   );
 
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme.copyWith(
-      primary: _seed,
-      onPrimary: Colors.white,
-      surface: _surface,
-      surfaceContainerLowest: _panel,
-      surfaceContainerLow: const Color(0xFFF0EEE7),
-      outlineVariant: const Color(0xFFD8D4C9),
+      primary: isDark ? const Color(0xFF43A684) : _seed,
+      onPrimary: isDark ? const Color(0xFF003825) : Colors.white,
+      surface: isDark ? const Color(0xFF1A1D1A) : _surface,
+      surfaceContainerLowest: isDark ? const Color(0xFF151815) : _panel,
+      surfaceContainerLow: isDark ? const Color(0xFF1E211E) : const Color(0xFFF0EEE7),
+      outlineVariant: isDark ? const Color(0xFF44483F) : const Color(0xFFD8D4C9),
     ),
-    scaffoldBackgroundColor: _surface,
+    scaffoldBackgroundColor: isDark ? const Color(0xFF1A1D1A) : _surface,
     fontFamily: 'Roboto',
     textTheme: Typography.blackMountainView.apply(
       bodyColor: _ink,

@@ -8,13 +8,16 @@ import 'package:flutter/services.dart';
 
 import '../../models/vault_models.dart';
 import '../../repositories/vault_repository.dart';
+import '../../settings/settings_service.dart';
 import '../../widgets/field_line.dart';
 import '../../widgets/status_chip.dart';
+import '../settings/settings_dialog.dart';
 import '../unlock/unlock_page.dart';
 
 enum _RemoteConflictAction { keepLocal, reopenRemote }
 
 enum _MoreAction {
+  settings,
   remoteMetadata,
   changePassword,
   autoLock,
@@ -46,11 +49,13 @@ class VaultPage extends StatefulWidget {
     required this.repository,
     required this.initialVault,
     this.keyfilePath,
+    this.settingsService,
   });
 
   final VaultRepository repository;
   final OpenedVault initialVault;
   final String? keyfilePath;
+  final SettingsService? settingsService;
 
   @override
   State<VaultPage> createState() => _VaultPageState();
@@ -162,7 +167,7 @@ class _VaultPageState extends State<VaultPage> {
   Timer? _inactivityTimer;
   final Set<String> _selectedEntryIds = {};
   final Set<String> _visibleCustomFields = {};
-  int _autoLockMinutes = 5;
+  late int _autoLockMinutes;
 
   // Edit form controllers
   final _editTitleController = TextEditingController();
@@ -174,6 +179,8 @@ class _VaultPageState extends State<VaultPage> {
   @override
   void initState() {
     super.initState();
+    final svc = widget.settingsService;
+    _autoLockMinutes = svc != null ? svc.settings.autoLockMinutes : 5;
     _groupTree = widget.initialVault.groupTree;
     _selectedGroup = _groupTree;
     if (_selectedGroup.entries.isNotEmpty) {
@@ -1620,6 +1627,14 @@ class _VaultPageState extends State<VaultPage> {
               icon: const Icon(Icons.more_vert),
               onSelected: (action) {
                 switch (action) {
+                  case _MoreAction.settings:
+                    showDialog<void>(
+                      context: context,
+                      builder: (_) => SettingsDialog(
+                        settingsService: widget.settingsService!,
+                        showBackendInfo: true,
+                      ),
+                    );
                   case _MoreAction.remoteMetadata:
                     _showRemoteMetadata();
                   case _MoreAction.changePassword:
@@ -1631,6 +1646,16 @@ class _VaultPageState extends State<VaultPage> {
                 }
               },
               itemBuilder: (context) => [
+                if (widget.settingsService != null)
+                  const PopupMenuItem<_MoreAction>(
+                    value: _MoreAction.settings,
+                    child: ListTile(
+                      leading: Icon(Icons.settings_outlined),
+                      title: Text('Settings'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
                 if (widget.initialVault.metadata != null)
                   const PopupMenuItem<_MoreAction>(
                     value: _MoreAction.remoteMetadata,
@@ -1761,6 +1786,8 @@ class _VaultPageState extends State<VaultPage> {
                       loadingHistory: _loadingHistory,
                       selectedEntry: _selectedEntry,
                       visibleCustomFields: _visibleCustomFields,
+                      clipboardClearSeconds:
+                          widget.settingsService?.settings.clipboardClearSeconds ?? 30,
                       onToggleCustomFieldVisibility: (key) {
                         setState(() {
                           if (_visibleCustomFields.contains(key)) {
@@ -2507,7 +2534,8 @@ class _EntryRow extends StatelessWidget {
 }
 
 class _DetailPane extends StatelessWidget {
-  const _DetailPane({
+  // ignore: must_be_immutable
+  _DetailPane({
     required this.detail,
     required this.loading,
     required this.passwordVisible,
@@ -2542,6 +2570,7 @@ class _DetailPane extends StatelessWidget {
     this.selectedEntry,
     this.visibleCustomFields = const {},
     this.onToggleCustomFieldVisibility,
+    this.clipboardClearSeconds = 30,
   });
 
   final EntryDetail? detail;
@@ -2578,6 +2607,7 @@ class _DetailPane extends StatelessWidget {
   final EntrySummary? selectedEntry;
   final Set<String> visibleCustomFields;
   final void Function(String)? onToggleCustomFieldVisibility;
+  final int clipboardClearSeconds;
 
   @override
   Widget build(BuildContext context) {
@@ -3101,18 +3131,20 @@ class _DetailPane extends StatelessWidget {
     );
   }
 
-  static Timer? _clipboardTimer;
+  Timer? _clipboardTimer;
 
-  static void _copyToClipboard(
+  void _copyToClipboard(
     BuildContext context,
     String value,
     String label,
   ) {
     Clipboard.setData(ClipboardData(text: value));
     _clipboardTimer?.cancel();
-    _clipboardTimer = Timer(const Duration(seconds: 30), () {
-      Clipboard.setData(const ClipboardData(text: ''));
-    });
+    if (clipboardClearSeconds > 0) {
+      _clipboardTimer = Timer(Duration(seconds: clipboardClearSeconds), () {
+        Clipboard.setData(const ClipboardData(text: ''));
+      });
+    }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

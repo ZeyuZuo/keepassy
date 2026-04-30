@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import '../features/unlock/unlock_page.dart';
 import '../repositories/ffi_vault_repository.dart';
 import '../repositories/vault_repository.dart';
+import '../settings/settings_service.dart';
 import 'theme.dart';
 
-class KeepassYApp extends StatelessWidget {
-  const KeepassYApp({super.key, VaultRepository? repository})
-    : _repository = repository;
+class KeepassYApp extends StatefulWidget {
+  const KeepassYApp({super.key, VaultRepository? repository, SettingsService? settingsService})
+    : _repository = repository,
+      _settingsService = settingsService;
 
   final VaultRepository? _repository;
+  final SettingsService? _settingsService;
 
   static VaultRepository defaultRepository() {
     try {
@@ -29,17 +32,46 @@ class KeepassYApp extends StatelessWidget {
   }
 
   @override
+  State<KeepassYApp> createState() => _KeepassYAppState();
+}
+
+class _KeepassYAppState extends State<KeepassYApp> {
+  late final SettingsService _settingsService;
+
+  @override
+  void initState() {
+    super.initState();
+    _settingsService = widget._settingsService ?? SettingsService();
+    _settingsService.addListener(() => setState(() {}));
+    _settingsService.load();
+  }
+
+  @override
+  void dispose() {
+    if (widget._settingsService == null) {
+      _settingsService.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final repository = _repository ?? defaultRepository();
+    final repository = widget._repository ?? KeepassYApp.defaultRepository();
     final isMock = repository is MockVaultRepository;
+    final settings = _settingsService.settings;
 
     return MaterialApp(
       title: 'KeePassY',
       debugShowCheckedModeBanner: false,
-      theme: buildKeepassYTheme(),
+      themeMode: settings.themeMode,
+      theme: buildKeepassYTheme(brightness: Brightness.light),
+      darkTheme: buildKeepassYTheme(brightness: Brightness.dark),
       home: Stack(
         children: [
-          UnlockPage(repository: repository),
+          UnlockPage(
+            repository: repository,
+            settingsService: _settingsService,
+          ),
           if (isMock)
             Positioned(
               top: 0,
