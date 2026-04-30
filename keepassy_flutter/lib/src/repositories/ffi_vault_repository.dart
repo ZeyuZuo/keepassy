@@ -30,6 +30,17 @@ typedef _OpenLocalDart =
       Pointer<Utf8> keyfilePath,
     );
 
+typedef _CreateLocalNative =
+    _KeepassYFfiResult Function(
+      Pointer<Utf8> requestJson,
+      Pointer<Utf8> masterPassword,
+    );
+typedef _CreateLocalDart =
+    _KeepassYFfiResult Function(
+      Pointer<Utf8> requestJson,
+      Pointer<Utf8> masterPassword,
+    );
+
 typedef _OpenWebDavNative =
     _KeepassYFfiResult Function(
       Pointer<Utf8> requestJson,
@@ -161,6 +172,9 @@ class FfiVaultRepository implements VaultRepository {
     _openLocal = _lib.lookupFunction<_OpenLocalNative, _OpenLocalDart>(
       'keepassy_open_local',
     );
+    _createLocal = _lib.lookupFunction<_CreateLocalNative, _CreateLocalDart>(
+      'keepassy_create_local',
+    );
     _openWebDav = _lib.lookupFunction<_OpenWebDavNative, _OpenWebDavDart>(
       'keepassy_open_webdav',
     );
@@ -243,6 +257,7 @@ class FfiVaultRepository implements VaultRepository {
   Pointer<Void>? _session;
 
   late final _OpenLocalDart _openLocal;
+  late final _CreateLocalDart _createLocal;
   late final _OpenWebDavDart _openWebDav;
   late final _SessionCloseDart _sessionClose;
   late final _StringFreeDart _stringFree;
@@ -298,6 +313,40 @@ class FfiVaultRepository implements VaultRepository {
       if (keyfilePtr != nullptr) {
         calloc.free(keyfilePtr);
       }
+    }
+  }
+
+  @override
+  Future<OpenedVault> createLocal({
+    required String path,
+    required String masterPassword,
+    String? keyfilePath,
+  }) async {
+    if (path.trim().isEmpty) {
+      throw const VaultRepositoryException('File path is required.');
+    }
+    if (masterPassword.isEmpty) {
+      throw const VaultRepositoryException('Master password is required.');
+    }
+
+    final request = <String, Object?>{
+      'path': path.trim(),
+      if (keyfilePath != null && keyfilePath.trim().isNotEmpty)
+        'keyfile_path': keyfilePath.trim(),
+    };
+    final requestPtr = jsonEncode(request).toNativeUtf8();
+    final passwordPtr = masterPassword.toNativeUtf8();
+
+    try {
+      final result = _createLocal(requestPtr, passwordPtr);
+      final json = _readJsonObject(result);
+      if (result.session != nullptr) {
+        _session = result.session;
+      }
+      return OpenedVault.fromJson(json);
+    } finally {
+      calloc.free(requestPtr);
+      calloc.free(passwordPtr);
     }
   }
 

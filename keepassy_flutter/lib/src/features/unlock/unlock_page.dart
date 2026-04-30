@@ -6,6 +6,25 @@ import '../../settings/settings_service.dart';
 import '../settings/settings_dialog.dart';
 import '../vault/vault_page.dart';
 
+double _pwStrength(String pw) {
+  if (pw.isEmpty) return 0;
+  double score = 0;
+  if (pw.length >= 8) score += 1;
+  if (pw.length >= 12) score += 1;
+  if (pw.length >= 16) score += 1;
+  if (RegExp(r'[a-z]').hasMatch(pw)) score += 0.5;
+  if (RegExp(r'[A-Z]').hasMatch(pw)) score += 0.5;
+  if (RegExp(r'[0-9]').hasMatch(pw)) score += 0.5;
+  if (RegExp(r'[^a-zA-Z0-9]').hasMatch(pw)) score += 0.5;
+  return (score / 4).clamp(0.0, 1.0);
+}
+
+Color _pwColor(double v) {
+  if (v < 0.3) return Colors.red;
+  if (v < 0.6) return Colors.orange;
+  return Colors.green;
+}
+
 enum _VaultSource { local, webDav }
 
 class UnlockPage extends StatefulWidget {
@@ -71,6 +90,219 @@ class _UnlockPageState extends State<UnlockPage> {
     _passwordController.dispose();
     _keyfileController.dispose();
     super.dispose();
+  }
+
+  void _showCreateVaultDialog() {
+    final pathCtrl = TextEditingController();
+    final passwordCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    final keyfileCtrl = TextEditingController();
+    bool obscure = true;
+    String? error;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Create new vault'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: pathCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Save as',
+                            hintText: 'Choose a .kdbx file path',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Choose location',
+                        onPressed: () async {
+                          final result = await FilePicker.platform
+                              .saveFile(dialogTitle: 'Save new vault',
+                              fileName: 'NewVault.kdbx');
+                          if (result != null) {
+                            pathCtrl.text = result;
+                          }
+                        },
+                        icon: const Icon(Icons.folder_open),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: passwordCtrl,
+                    obscureText: obscure,
+                    decoration: InputDecoration(
+                      labelText: 'Master password',
+                      suffixIcon: IconButton(
+                        tooltip: obscure ? 'Show' : 'Hide',
+                        onPressed: () =>
+                            setDialogState(() => obscure = !obscure),
+                        icon: Icon(obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined),
+                      ),
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  StatefulBuilder(
+                    builder: (_, setSt) {
+                      final s = _pwStrength(passwordCtrl.text);
+                      if (s == 0) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(2),
+                                child: LinearProgressIndicator(
+                                  value: s, minHeight: 4, color: _pwColor(s)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              ['Weak', 'Fair', 'Good', 'Strong']
+                                  [(s * 3.99).toInt()],
+                              style: TextStyle(fontSize: 11, color: _pwColor(s)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: confirmCtrl,
+                    obscureText: true,
+                    decoration:
+                        const InputDecoration(labelText: 'Confirm password'),
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    title: const Text('Use keyfile'),
+                    value: keyfileCtrl.text.isNotEmpty,
+                    onChanged: (v) {
+                      if (!v) keyfileCtrl.clear();
+                      setDialogState(() {});
+                    },
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  if (keyfileCtrl.text.isNotEmpty || true) ...[
+                    // Always show so user can pick a keyfile
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: keyfileCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Keyfile path (optional)',
+                              prefixIcon:
+                                  Icon(Icons.insert_drive_file_outlined),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Browse for keyfile',
+                          onPressed: () async {
+                            final result = await FilePicker.platform
+                                .pickFiles(dialogTitle: 'Select keyfile');
+                            if (result != null &&
+                                result.files.single.path != null) {
+                              keyfileCtrl.text = result.files.single.path!;
+                              setDialogState(() {});
+                            }
+                          },
+                          icon: const Icon(Icons.folder_open),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(error!, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final path = pathCtrl.text.trim();
+                final pw = passwordCtrl.text;
+                final confirm = confirmCtrl.text;
+
+                if (path.isEmpty) {
+                  setDialogState(() => error = 'File path is required.');
+                  return;
+                }
+                if (pw.isEmpty) {
+                  setDialogState(() => error = 'Master password is required.');
+                  return;
+                }
+                if (pw != confirm) {
+                  setDialogState(() => error = 'Passwords do not match.');
+                  return;
+                }
+
+                try {
+                  final vault = await widget.repository.createLocal(
+                    path: path,
+                    masterPassword: pw,
+                    keyfilePath: keyfileCtrl.text.trim().isNotEmpty
+                        ? keyfileCtrl.text.trim()
+                        : null,
+                  );
+
+                  final svc = widget.settingsService;
+                  if (svc != null && svc.settings.rememberPaths) {
+                    svc.update((s) { s.lastLocalPath = path; });
+                  }
+
+                  if (!mounted) return;
+                  Navigator.pop(ctx);
+                  await Navigator.of(context).pushReplacement(
+                    MaterialPageRoute<void>(
+                      builder: (_) => VaultPage(
+                        repository: widget.repository,
+                        initialVault: vault,
+                        keyfilePath: keyfileCtrl.text.trim().isNotEmpty
+                            ? keyfileCtrl.text.trim()
+                            : null,
+                        settingsService: svc,
+                      ),
+                    ),
+                  );
+                } on Object catch (err) {
+                  setDialogState(() => error = err.toString());
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    ).then((_) {
+      pathCtrl.dispose();
+      passwordCtrl.dispose();
+      confirmCtrl.dispose();
+      keyfileCtrl.dispose();
+    });
   }
 
   String? _validateForm() {
@@ -218,6 +450,7 @@ class _UnlockPageState extends State<UnlockPage> {
                     onClearError: () => setState(() => _error = null),
                     onOpen: _opening ? null : _openVault,
                     settingsService: widget.settingsService,
+                    onCreateVault: _showCreateVaultDialog,
                   );
 
                   if (compact) {
@@ -238,7 +471,10 @@ class _UnlockPageState extends State<UnlockPage> {
                     children: [
                       const Expanded(child: _ProductHeader()),
                       const SizedBox(width: 56),
-                      SizedBox(width: 440, child: form),
+                      SizedBox(
+                        width: 440,
+                        child: SingleChildScrollView(child: form),
+                      ),
                     ],
                   );
                 },
@@ -304,6 +540,7 @@ class _UnlockForm extends StatelessWidget {
     required this.onClearError,
     this.error,
     this.settingsService,
+    this.onCreateVault,
   });
 
   final _VaultSource source;
@@ -325,6 +562,7 @@ class _UnlockForm extends StatelessWidget {
   final VoidCallback onClearError;
   final String? error;
   final SettingsService? settingsService;
+  final VoidCallback? onCreateVault;
 
   @override
   Widget build(BuildContext context) {
@@ -528,9 +766,9 @@ class _UnlockForm extends StatelessWidget {
             if (error != null) ...[
               const SizedBox(height: 4),
               Text(error!, style: TextStyle(color: colorScheme.error)),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
             ] else
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
             FilledButton.icon(
               onPressed: onOpen,
               icon: opening
@@ -541,6 +779,14 @@ class _UnlockForm extends StatelessWidget {
                   : const Icon(Icons.lock_open_outlined),
               label: Text(opening ? 'Opening' : 'Unlock'),
             ),
+            if (onCreateVault != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: TextButton(
+                  onPressed: opening ? null : onCreateVault,
+                  child: const Text('Create new vault'),
+                ),
+              ),
           ],
         ),
       ),

@@ -11,6 +11,12 @@ abstract class VaultRepository {
     String? keyfilePath,
   });
 
+  Future<OpenedVault> createLocal({
+    required String path,
+    required String masterPassword,
+    String? keyfilePath,
+  });
+
   Future<OpenedVault> openWebDav({
     required String url,
     required String masterPassword,
@@ -115,6 +121,28 @@ class MockVaultRepository implements VaultRepository {
     }
 
     final vault = _sampleVault(path);
+    _vault = vault;
+    _dirty = false;
+    _details
+      ..clear()
+      ..addEntries(_sampleDetails.entries);
+    return vault;
+  }
+
+  @override
+  Future<OpenedVault> createLocal({
+    required String path,
+    required String masterPassword,
+    String? keyfilePath,
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    if (path.trim().isEmpty) {
+      throw const VaultRepositoryException('File path is required.');
+    }
+    if (masterPassword.isEmpty) {
+      throw const VaultRepositoryException('Master password is required.');
+    }
+    final vault = _sampleVault(path.trim());
     _vault = vault;
     _dirty = false;
     _details
