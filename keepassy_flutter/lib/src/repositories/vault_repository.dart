@@ -116,8 +116,11 @@ class MockVaultRepository implements VaultRepository {
     if (path.trim().isEmpty) {
       throw const VaultRepositoryException('Vault file path is required.');
     }
-    if (masterPassword.isEmpty) {
-      throw const VaultRepositoryException('Master password is required.');
+    if (masterPassword.isEmpty &&
+        (keyfilePath == null || keyfilePath.trim().isEmpty)) {
+      throw const VaultRepositoryException(
+        'Master password or keyfile is required.',
+      );
     }
 
     final vault = _sampleVault(path);
@@ -139,8 +142,11 @@ class MockVaultRepository implements VaultRepository {
     if (path.trim().isEmpty) {
       throw const VaultRepositoryException('File path is required.');
     }
-    if (masterPassword.isEmpty) {
-      throw const VaultRepositoryException('Master password is required.');
+    if (masterPassword.isEmpty &&
+        (keyfilePath == null || keyfilePath.trim().isEmpty)) {
+      throw const VaultRepositoryException(
+        'Master password or keyfile is required.',
+      );
     }
     final vault = _sampleVault(path.trim());
     _vault = vault;
@@ -161,8 +167,11 @@ class MockVaultRepository implements VaultRepository {
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 320));
     validateWebDavUrl(url);
-    if (masterPassword.isEmpty) {
-      throw const VaultRepositoryException('Master password is required.');
+    if (masterPassword.isEmpty &&
+        (keyfilePath == null || keyfilePath.trim().isEmpty)) {
+      throw const VaultRepositoryException(
+        'Master password or keyfile is required.',
+      );
     }
 
     final vault = _sampleVault(url.trim()).copyWith(

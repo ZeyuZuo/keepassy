@@ -76,8 +76,9 @@ void main() {
 
   // --- Source switching ---
 
-  testWidgets('local source shows file path and hides server fields',
-      (tester) async {
+  testWidgets('local source shows file path and hides server fields', (
+    tester,
+  ) async {
     final repo = MockVaultRepository();
     await tester.pumpWidget(KeepassYApp(repository: repo));
 
@@ -88,8 +89,9 @@ void main() {
     expect(find.text('Server password'), findsNothing);
   });
 
-  testWidgets('WebDAV source shows server fields and hides file path',
-      (tester) async {
+  testWidgets('WebDAV source shows server fields and hides file path', (
+    tester,
+  ) async {
     final repo = MockVaultRepository();
     await tester.pumpWidget(KeepassYApp(repository: repo));
 
@@ -102,8 +104,9 @@ void main() {
     expect(find.text('File path'), findsNothing);
   });
 
-  testWidgets('master password and keyfile visible regardless of source',
-      (tester) async {
+  testWidgets('master password and keyfile visible regardless of source', (
+    tester,
+  ) async {
     final repo = MockVaultRepository();
     await tester.pumpWidget(KeepassYApp(repository: repo));
 
@@ -119,6 +122,70 @@ void main() {
     expect(find.text('Use keyfile'), findsOneWidget);
   });
 
+  testWidgets(
+    'create vault dialog has a direct path flow and keyfile section',
+    (tester) async {
+      final repo = MockVaultRepository();
+      await tester.pumpWidget(KeepassYApp(repository: repo));
+
+      await tester.ensureVisible(find.text('Create new vault'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new vault'));
+      await tester.pumpAndSettle();
+
+      final dialog = find.byType(AlertDialog);
+      expect(find.text('Create local KDBX'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.text('Choose save location'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(TextField, 'KDBX file'), findsNothing);
+      expect(find.text('Save as'), findsNothing);
+      expect(find.widgetWithText(TextField, 'Keyfile'), findsNothing);
+
+      await tester.tap(
+        find.descendant(of: dialog, matching: find.text('Use keyfile')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TextField, 'Keyfile'), findsOneWidget);
+      expect(find.byTooltip('Select existing keyfile'), findsOneWidget);
+      expect(find.byTooltip('Create keyfile'), findsOneWidget);
+    },
+  );
+
+  testWidgets('create vault requires choosing a save location first', (
+    tester,
+  ) async {
+    final repo = MockVaultRepository();
+    await tester.pumpWidget(KeepassYApp(repository: repo));
+
+    await tester.ensureVisible(find.text('Create new vault'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create new vault'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Create vault'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Choose where to save the KDBX file.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('mock repository allows keyfile-only create', () async {
+    final repo = MockVaultRepository();
+    final vault = await repo.createLocal(
+      path: '/tmp/keyfile-only.kdbx',
+      masterPassword: '',
+      keyfilePath: '/tmp/keyfile.key',
+    );
+
+    expect(vault.source, '/tmp/keyfile-only.kdbx');
+  });
+
   // --- Validation ---
 
   Future<void> tapUnlock(WidgetTester tester) async {
@@ -128,15 +195,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('shows validation error for empty master password',
-      (tester) async {
+  testWidgets('shows validation error for empty master password', (
+    tester,
+  ) async {
     final repo = MockVaultRepository();
     await tester.pumpWidget(KeepassYApp(repository: repo));
 
     // Path is pre-filled with a default value, master password is empty
     await tapUnlock(tester);
 
-    expect(find.text('Master password is required.'), findsOneWidget);
+    expect(
+      find.text('Master password or keyfile is required.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('shows validation error for empty WebDAV URL', (tester) async {
@@ -183,14 +254,18 @@ void main() {
     expect(find.text('Server URL is required.'), findsNothing);
   });
 
-  testWidgets('clears validation error when typing in master password',
-      (tester) async {
+  testWidgets('clears validation error when typing in master password', (
+    tester,
+  ) async {
     final repo = MockVaultRepository();
     await tester.pumpWidget(KeepassYApp(repository: repo));
 
     // Path is pre-filled, master password is empty — tap Unlock
     await tapUnlock(tester);
-    expect(find.text('Master password is required.'), findsOneWidget);
+    expect(
+      find.text('Master password or keyfile is required.'),
+      findsOneWidget,
+    );
 
     // Type in master password — error should clear via onChanged
     await tester.ensureVisible(
@@ -203,6 +278,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Master password is required.'), findsNothing);
+    expect(find.text('Master password or keyfile is required.'), findsNothing);
   });
 }

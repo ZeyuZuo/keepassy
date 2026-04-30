@@ -113,7 +113,11 @@ class _SaveVaultDialogState extends State<_SaveVaultDialog> {
             TextField(
               controller: _passwordCtrl,
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Master password'),
+              decoration: InputDecoration(
+                labelText: _hasKeyfile
+                    ? 'Master password (optional)'
+                    : 'Master password',
+              ),
               autofocus: true,
               onSubmitted: (_) => _submit(),
             ),
@@ -216,8 +220,7 @@ class _VaultPageState extends State<VaultPage> {
   void _onCopyToClipboard(String value, String label) {
     Clipboard.setData(ClipboardData(text: value));
     _clipboardTimer?.cancel();
-    final secs =
-        widget.settingsService?.settings.clipboardClearSeconds ?? 30;
+    final secs = widget.settingsService?.settings.clipboardClearSeconds ?? 30;
     if (secs > 0) {
       _clipboardTimer = Timer(Duration(seconds: secs), () {
         Clipboard.setData(const ClipboardData(text: ''));
@@ -420,7 +423,11 @@ class _VaultPageState extends State<VaultPage> {
           _SaveVaultDialog(initialKeyfilePath: widget.keyfilePath),
     );
 
-    if (result == null || result.password.isEmpty) return;
+    if (result == null) return;
+    if (result.password.isEmpty &&
+        (result.keyfilePath == null || result.keyfilePath!.trim().isEmpty)) {
+      return;
+    }
 
     setState(() {
       _saving = true;
@@ -1596,158 +1603,263 @@ class _VaultPageState extends State<VaultPage> {
         const SingleActivator(LogicalKeyboardKey.keyL, control: true): _lock,
         const SingleActivator(LogicalKeyboardKey.keyN, control: true):
             _showCreateDialog,
-        const SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true):
-            _copySelectedPassword,
+        const SingleActivator(
+          LogicalKeyboardKey.keyC,
+          control: true,
+          shift: true,
+        ): _copySelectedPassword,
         const SingleActivator(LogicalKeyboardKey.escape): _handleEscape,
       },
       child: Listener(
         onPointerDown: (_) => _resetInactivityTimer(),
         child: Scaffold(
-        appBar: AppBar(
-          titleSpacing: 20,
-          title: Row(
-            children: [
-              const Icon(Icons.lock_outline),
-              const SizedBox(width: 10),
-              const Text('KeePassY'),
-              const SizedBox(width: 16),
-              StatusChip(
+          appBar: AppBar(
+            titleSpacing: 20,
+            title: Row(
+              children: [
+                const Icon(Icons.lock_outline),
+                const SizedBox(width: 10),
+                const Text('KeePassY'),
+                const SizedBox(width: 16),
+                StatusChip(
+                  dirty: _dirty,
+                  saving: _saving,
+                  error: _saveError,
+                  conflict: _conflict,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    widget.initialVault.source,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              if (_selectedEntryIds.isNotEmpty)
+                IconButton(
+                  tooltip: 'Delete selected (${_selectedEntryIds.length})',
+                  onPressed: _bulkDelete,
+                  icon: Icon(
+                    Icons.delete_sweep,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              _SaveButton(
                 dirty: _dirty,
                 saving: _saving,
                 error: _saveError,
                 conflict: _conflict,
+                onPressed: _saveVault,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  widget.initialVault.source,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+              PopupMenuButton<_MoreAction>(
+                tooltip: 'More actions',
+                icon: const Icon(Icons.more_vert),
+                onSelected: (action) {
+                  switch (action) {
+                    case _MoreAction.settings:
+                      showDialog<void>(
+                        context: context,
+                        builder: (_) => SettingsDialog(
+                          settingsService: widget.settingsService!,
+                        ),
+                      );
+                    case _MoreAction.remoteMetadata:
+                      _showRemoteMetadata();
+                    case _MoreAction.changePassword:
+                      _changePasswordDialog();
+                    case _MoreAction.autoLock:
+                      _showAutoLockConfig();
+                    case _MoreAction.reopenRemote:
+                      _reopenRemote();
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (widget.settingsService != null)
+                    const PopupMenuItem<_MoreAction>(
+                      value: _MoreAction.settings,
+                      child: ListTile(
+                        leading: Icon(Icons.settings_outlined),
+                        title: Text('Settings'),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  if (widget.initialVault.metadata != null)
+                    const PopupMenuItem<_MoreAction>(
+                      value: _MoreAction.remoteMetadata,
+                      child: ListTile(
+                        leading: Icon(Icons.cloud_done_outlined),
+                        title: Text('Remote metadata'),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  const PopupMenuItem<_MoreAction>(
+                    value: _MoreAction.changePassword,
+                    child: ListTile(
+                      leading: Icon(Icons.vpn_key_outlined),
+                      title: Text('Change master password'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
                   ),
-                ),
+                  const PopupMenuItem<_MoreAction>(
+                    value: _MoreAction.autoLock,
+                    child: ListTile(
+                      leading: Icon(Icons.timer_outlined),
+                      title: Text('Auto-lock settings'),
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  if (_conflict)
+                    const PopupMenuItem<_MoreAction>(
+                      value: _MoreAction.reopenRemote,
+                      child: ListTile(
+                        leading: Icon(Icons.refresh, color: Colors.red),
+                        title: Text(
+                          'Reopen remote',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                ],
               ),
+              IconButton(
+                tooltip: 'Lock vault',
+                onPressed: _lock,
+                icon: const Icon(Icons.lock_outline),
+              ),
+              const SizedBox(width: 8),
             ],
           ),
-          actions: [
-            if (_selectedEntryIds.isNotEmpty)
-              IconButton(
-                tooltip: 'Delete selected (${_selectedEntryIds.length})',
-                onPressed: _bulkDelete,
-                icon: Icon(
-                  Icons.delete_sweep,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-              ),
-            _SaveButton(
-              dirty: _dirty,
-              saving: _saving,
-              error: _saveError,
-              conflict: _conflict,
-              onPressed: _saveVault,
-            ),
-            PopupMenuButton<_MoreAction>(
-              tooltip: 'More actions',
-              icon: const Icon(Icons.more_vert),
-              onSelected: (action) {
-                switch (action) {
-                  case _MoreAction.settings:
-                    showDialog<void>(
-                      context: context,
-                      builder: (_) => SettingsDialog(
-                        settingsService: widget.settingsService!,
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 920;
+              if (compact) {
+                return Column(
+                  children: [
+                    SizedBox(
+                      height: 168,
+                      child: _GroupRail(
+                        root: _groupTree,
+                        selectedGroup: _selectedGroup,
+                        horizontal: true,
+                        onSelected: _selectGroup,
+                        onCreateGroup: _createGroupDialog,
+                        onRenameGroup: _renameGroupDialog,
+                        onDeleteGroup: _deleteGroupDialog,
                       ),
-                    );
-                  case _MoreAction.remoteMetadata:
-                    _showRemoteMetadata();
-                  case _MoreAction.changePassword:
-                    _changePasswordDialog();
-                  case _MoreAction.autoLock:
-                    _showAutoLockConfig();
-                  case _MoreAction.reopenRemote:
-                    _reopenRemote();
-                }
-              },
-              itemBuilder: (context) => [
-                if (widget.settingsService != null)
-                  const PopupMenuItem<_MoreAction>(
-                    value: _MoreAction.settings,
-                    child: ListTile(
-                      leading: Icon(Icons.settings_outlined),
-                      title: Text('Settings'),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
                     ),
-                  ),
-                if (widget.initialVault.metadata != null)
-                  const PopupMenuItem<_MoreAction>(
-                    value: _MoreAction.remoteMetadata,
-                    child: ListTile(
-                      leading: Icon(Icons.cloud_done_outlined),
-                      title: Text('Remote metadata'),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
+                    const Divider(),
+                    Expanded(
+                      child: _EntryList(
+                        group: _selectedGroup,
+                        entries: entries,
+                        selectedEntry: _selectedEntry,
+                        query: _query,
+                        onQueryChanged: (value) =>
+                            setState(() => _query = value),
+                        onSelected: _selectEntry,
+                        searchAllGroups: _searchAllGroups,
+                        onSearchAllGroupsChanged: (v) =>
+                            setState(() => _searchAllGroups = v),
+                        selectedEntryIds: _selectedEntryIds,
+                        onToggleSelect: (id) => setState(
+                          () => _selectedEntryIds.contains(id)
+                              ? _selectedEntryIds.remove(id)
+                              : _selectedEntryIds.add(id),
+                        ),
+                        sortMode: _sortMode,
+                        onSortModeChanged: (v) => setState(() => _sortMode = v),
+                        onCreateEntry: _showCreateDialog,
+                      ),
                     ),
-                  ),
-                const PopupMenuItem<_MoreAction>(
-                  value: _MoreAction.changePassword,
-                  child: ListTile(
-                    leading: Icon(Icons.vpn_key_outlined),
-                    title: Text('Change master password'),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                const PopupMenuItem<_MoreAction>(
-                  value: _MoreAction.autoLock,
-                  child: ListTile(
-                    leading: Icon(Icons.timer_outlined),
-                    title: Text('Auto-lock settings'),
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-                if (_conflict)
-                  const PopupMenuItem<_MoreAction>(
-                    value: _MoreAction.reopenRemote,
-                    child: ListTile(
-                      leading: Icon(Icons.refresh, color: Colors.red),
-                      title: Text('Reopen remote',
-                          style: TextStyle(color: Colors.red)),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
+                    const Divider(),
+                    SizedBox(
+                      height: 340,
+                      child: _DetailPane(
+                        detail: _detail,
+                        loading: _loadingDetail,
+                        passwordVisible: _passwordVisible,
+                        editing: _editing,
+                        titleCtrl: _editTitleController,
+                        usernameCtrl: _editUsernameController,
+                        passwordCtrl: _editPasswordController,
+                        urlCtrl: _editUrlController,
+                        notesCtrl: _editNotesController,
+                        onPasswordVisibilityChanged: () {
+                          setState(() => _passwordVisible = !_passwordVisible);
+                        },
+                        onEdit: _startEdit,
+                        onSaveEdit: _saveEdit,
+                        onCancelEdit: _cancelEdit,
+                        onDelete: _deleteEntry,
+                        onGeneratePassword: _showPasswordGenerator,
+                        onDownloadAttachment: _downloadAttachment,
+                        onAddAttachment: _addAttachment,
+                        onRemoveAttachment: _removeAttachment,
+                        onAddCustomField: _addCustomField,
+                        onRemoveCustomField: _removeCustomField,
+                        onToggleCustomFieldProtect: _toggleCustomFieldProtect,
+                        onToggleHistory: _loadHistory,
+                        onViewHistoryDetail: _viewHistoryDetail,
+                        onMoveEntry: _moveEntryDialog,
+                        onDuplicateEntry: _duplicateEntry,
+                        editExpires: _editExpires,
+                        onEditExpiresChanged: (v) =>
+                            setState(() => _editExpires = v),
+                        editExpiryDateCtrl: _editExpiryDateController,
+                        showHistory: _showHistory,
+                        history: _history,
+                        loadingHistory: _loadingHistory,
+                        selectedEntry: _selectedEntry,
+                        visibleCustomFields: _visibleCustomFields,
+                        clipboardClearSeconds:
+                            widget
+                                .settingsService
+                                ?.settings
+                                .clipboardClearSeconds ??
+                            30,
+                        onCopyToClipboard: _onCopyToClipboard,
+                        onToggleCustomFieldVisibility: (key) {
+                          setState(() {
+                            if (_visibleCustomFields.contains(key)) {
+                              _visibleCustomFields.remove(key);
+                            } else {
+                              _visibleCustomFields.add(key);
+                            }
+                          });
+                        },
+                      ),
                     ),
-                  ),
-              ],
-            ),
-            IconButton(
-              tooltip: 'Lock vault',
-              onPressed: _lock,
-              icon: const Icon(Icons.lock_outline),
-            ),
-            const SizedBox(width: 8),
-          ],
-        ),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxWidth < 920;
-            if (compact) {
-              return Column(
+                  ],
+                );
+              }
+
+              return Row(
                 children: [
                   SizedBox(
-                    height: 168,
+                    width: 264,
                     child: _GroupRail(
                       root: _groupTree,
                       selectedGroup: _selectedGroup,
-                      horizontal: true,
                       onSelected: _selectGroup,
                       onCreateGroup: _createGroupDialog,
                       onRenameGroup: _renameGroupDialog,
                       onDeleteGroup: _deleteGroupDialog,
                     ),
                   ),
-                  const Divider(),
-                  Expanded(
+                  const VerticalDivider(width: 1),
+                  SizedBox(
+                    width: 380,
                     child: _EntryList(
                       group: _selectedGroup,
                       entries: entries,
@@ -1766,12 +1878,10 @@ class _VaultPageState extends State<VaultPage> {
                       ),
                       sortMode: _sortMode,
                       onSortModeChanged: (v) => setState(() => _sortMode = v),
-                      onCreateEntry: _showCreateDialog,
                     ),
                   ),
-                  const Divider(),
-                  SizedBox(
-                    height: 340,
+                  const VerticalDivider(width: 1),
+                  Expanded(
                     child: _DetailPane(
                       detail: _detail,
                       loading: _loadingDetail,
@@ -1809,9 +1919,6 @@ class _VaultPageState extends State<VaultPage> {
                       loadingHistory: _loadingHistory,
                       selectedEntry: _selectedEntry,
                       visibleCustomFields: _visibleCustomFields,
-                      clipboardClearSeconds:
-                          widget.settingsService?.settings.clipboardClearSeconds ?? 30,
-                      onCopyToClipboard: _onCopyToClipboard,
                       onToggleCustomFieldVisibility: (key) {
                         setState(() {
                           if (_visibleCustomFields.contains(key)) {
@@ -1825,100 +1932,10 @@ class _VaultPageState extends State<VaultPage> {
                   ),
                 ],
               );
-            }
-
-            return Row(
-              children: [
-                SizedBox(
-                  width: 264,
-                  child: _GroupRail(
-                    root: _groupTree,
-                    selectedGroup: _selectedGroup,
-                    onSelected: _selectGroup,
-                    onCreateGroup: _createGroupDialog,
-                    onRenameGroup: _renameGroupDialog,
-                    onDeleteGroup: _deleteGroupDialog,
-                  ),
-                ),
-                const VerticalDivider(width: 1),
-                SizedBox(
-                  width: 380,
-                  child: _EntryList(
-                    group: _selectedGroup,
-                    entries: entries,
-                    selectedEntry: _selectedEntry,
-                    query: _query,
-                    onQueryChanged: (value) => setState(() => _query = value),
-                    onSelected: _selectEntry,
-                    searchAllGroups: _searchAllGroups,
-                    onSearchAllGroupsChanged: (v) =>
-                        setState(() => _searchAllGroups = v),
-                    selectedEntryIds: _selectedEntryIds,
-                    onToggleSelect: (id) => setState(
-                      () => _selectedEntryIds.contains(id)
-                          ? _selectedEntryIds.remove(id)
-                          : _selectedEntryIds.add(id),
-                    ),
-                    sortMode: _sortMode,
-                    onSortModeChanged: (v) => setState(() => _sortMode = v),
-                  ),
-                ),
-                const VerticalDivider(width: 1),
-                Expanded(
-                  child: _DetailPane(
-                    detail: _detail,
-                    loading: _loadingDetail,
-                    passwordVisible: _passwordVisible,
-                    editing: _editing,
-                    titleCtrl: _editTitleController,
-                    usernameCtrl: _editUsernameController,
-                    passwordCtrl: _editPasswordController,
-                    urlCtrl: _editUrlController,
-                    notesCtrl: _editNotesController,
-                    onPasswordVisibilityChanged: () {
-                      setState(() => _passwordVisible = !_passwordVisible);
-                    },
-                    onEdit: _startEdit,
-                    onSaveEdit: _saveEdit,
-                    onCancelEdit: _cancelEdit,
-                    onDelete: _deleteEntry,
-                    onGeneratePassword: _showPasswordGenerator,
-                    onDownloadAttachment: _downloadAttachment,
-                    onAddAttachment: _addAttachment,
-                    onRemoveAttachment: _removeAttachment,
-                    onAddCustomField: _addCustomField,
-                    onRemoveCustomField: _removeCustomField,
-                    onToggleCustomFieldProtect: _toggleCustomFieldProtect,
-                    onToggleHistory: _loadHistory,
-                    onViewHistoryDetail: _viewHistoryDetail,
-                    onMoveEntry: _moveEntryDialog,
-                    onDuplicateEntry: _duplicateEntry,
-                    editExpires: _editExpires,
-                    onEditExpiresChanged: (v) =>
-                        setState(() => _editExpires = v),
-                    editExpiryDateCtrl: _editExpiryDateController,
-                    showHistory: _showHistory,
-                    history: _history,
-                    loadingHistory: _loadingHistory,
-                    selectedEntry: _selectedEntry,
-                    visibleCustomFields: _visibleCustomFields,
-                    onToggleCustomFieldVisibility: (key) {
-                      setState(() {
-                        if (_visibleCustomFields.contains(key)) {
-                          _visibleCustomFields.remove(key);
-                        } else {
-                          _visibleCustomFields.add(key);
-                        }
-                      });
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
+            },
+          ),
         ),
       ),
-    ),
     );
   }
 
@@ -2178,11 +2195,14 @@ void _showGroupContextMenu(
       PopupMenuItem<String>(
         value: 'delete',
         child: ListTile(
-          leading: Icon(Icons.delete_outline,
-              color: Theme.of(context).colorScheme.error),
-          title: Text('Delete',
-              style: TextStyle(
-                  color: Theme.of(context).colorScheme.error)),
+          leading: Icon(
+            Icons.delete_outline,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          title: Text(
+            'Delete',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
           dense: true,
           contentPadding: EdgeInsets.zero,
         ),
@@ -2681,7 +2701,8 @@ class _DetailPane extends StatelessWidget {
             if (detail.password != null && detail.password!.isNotEmpty)
               IconButton(
                 tooltip: 'Copy password',
-                onPressed: () => onCopyToClipboard?.call(detail.password!, 'Password'),
+                onPressed: () =>
+                    onCopyToClipboard?.call(detail.password!, 'Password'),
                 icon: const Icon(Icons.key),
               ),
             IconButton(
@@ -2802,10 +2823,9 @@ class _DetailPane extends StatelessWidget {
           children: [
             Text(
               'History',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
             const Spacer(),
             if (onToggleHistory != null)
@@ -3155,7 +3175,6 @@ class _DetailPane extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _FieldEntry {

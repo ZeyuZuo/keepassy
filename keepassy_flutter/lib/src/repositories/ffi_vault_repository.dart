@@ -290,8 +290,11 @@ class FfiVaultRepository implements VaultRepository {
     if (path.trim().isEmpty) {
       throw const VaultRepositoryException('Vault file path is required.');
     }
-    if (masterPassword.isEmpty) {
-      throw const VaultRepositoryException('Master password is required.');
+    if (masterPassword.isEmpty &&
+        (keyfilePath == null || keyfilePath.trim().isEmpty)) {
+      throw const VaultRepositoryException(
+        'Master password or keyfile is required.',
+      );
     }
 
     final pathPtr = path.toNativeUtf8();
@@ -325,8 +328,11 @@ class FfiVaultRepository implements VaultRepository {
     if (path.trim().isEmpty) {
       throw const VaultRepositoryException('File path is required.');
     }
-    if (masterPassword.isEmpty) {
-      throw const VaultRepositoryException('Master password is required.');
+    if (masterPassword.isEmpty &&
+        (keyfilePath == null || keyfilePath.trim().isEmpty)) {
+      throw const VaultRepositoryException(
+        'Master password or keyfile is required.',
+      );
     }
 
     final request = <String, Object?>{
@@ -359,8 +365,11 @@ class FfiVaultRepository implements VaultRepository {
     String? keyfilePath,
   }) async {
     validateWebDavUrl(url);
-    if (masterPassword.isEmpty) {
-      throw const VaultRepositoryException('Master password is required.');
+    if (masterPassword.isEmpty &&
+        (keyfilePath == null || keyfilePath.trim().isEmpty)) {
+      throw const VaultRepositoryException(
+        'Master password or keyfile is required.',
+      );
     }
 
     final request = <String, Object?>{

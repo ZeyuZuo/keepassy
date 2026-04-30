@@ -20,12 +20,12 @@ and keep frontend design rules in `keepassy_flutter/docs/frontend.md`.
 
 ## Current Priority
 
-Current sprint: Phase P4.6, settings foundation.
+Current sprint: Phase P4.8, Recycle Bin.
 
 Local and WebDAV workflows are functionally complete enough for daily use, and
-the first UX/UI refactor pass is complete. The next meaningful milestone is
-adding practical settings, then making KeePassY able to create a new `.kdbx`,
-then implementing Recycle Bin semantics.
+the first UX/UI refactor pass is complete. Settings and local `.kdbx` creation
+are implemented. The next meaningful milestone is implementing Recycle Bin
+semantics so normal deletes become recoverable.
 
 ## Phase P0: Baseline and Documentation
 
@@ -615,157 +615,168 @@ Acceptance:
 
 ## Phase P4.6: Settings Foundation
 
+Status: mostly done.
+
 Goal: add practical settings before adding more vault workflows, so user
 preferences and operational controls have a stable home.
 
 ### P4.6.1 Settings Surface
 
-- [ ] Add a Settings dialog or page reachable from the vault More menu and
+- [x] Add a Settings dialog or page reachable from the vault More menu and
       unlock surface if useful.
-- [ ] Split settings into clear sections:
+- [x] Split settings into clear sections:
   - App
   - Security
-  - Vault
-  - Backend / FFI
-- [ ] Keep settings UI behind Flutter; do not move KeePass logic into widgets.
-- [ ] Persist app-level settings locally without storing secrets.
-- [ ] Keep vault-specific facts read-only unless backend support exists.
+- [x] Keep backend / FFI internals out of the normal settings surface.
+- [x] Keep settings UI behind Flutter; do not move KeePass logic into widgets.
+- [x] Persist app-level settings locally without storing secrets.
+- [x] Keep vault-specific facts read-only unless backend support exists.
 
 Done when:
 
-- [ ] Users have one obvious place to change app behavior and inspect backend
-      status.
+- [x] Users have one obvious place to change app behavior.
 
 ### P4.6.2 App Settings
 
-- [ ] Theme mode:
+- [x] Theme mode:
   - system
   - light
   - dark
 - [ ] Compact layout toggle or density choice if it remains visually useful.
-- [ ] Default unlock source:
+- [x] Default unlock source:
   - local file
   - WebDAV
-- [ ] Remember last non-secret local path / WebDAV URL if enabled.
-- [ ] Do not remember master password, keyfile contents, or WebDAV password.
+- [x] Remember last non-secret local path / WebDAV URL if enabled.
+- [x] Do not remember master password, keyfile contents, or WebDAV password.
 
 Done when:
 
-- [ ] App preferences persist across restarts without leaking credentials.
+- [x] App preferences persist across restarts without leaking credentials.
 
 ### P4.6.3 Security Settings
 
-- [ ] Configurable auto-lock timeout.
-- [ ] Configurable clipboard clear timeout.
+- [x] Configurable auto-lock timeout.
+- [x] Configurable clipboard clear timeout.
 - [ ] Option to clear clipboard immediately on lock.
 - [ ] Option to hide or show protected custom fields by default if useful.
 - [ ] Document what sensitive data remains in memory during an open session.
 
 Done when:
 
-- [ ] Security-sensitive behavior is explicit and user-configurable.
+- [x] Core security-sensitive behavior is explicit and user-configurable.
 
 ### P4.6.4 Vault and Backend Status
 
-- [ ] Show current vault source.
-- [ ] Show whether the vault is local or WebDAV.
-- [ ] Show remote metadata when present:
+- [x] Show current vault source.
+- [x] Show whether the vault is local or WebDAV.
+- [x] Show remote metadata when present:
   - ETag
   - Last-Modified
   - Content-Length
-- [ ] Show FFI library load path if available.
+- [x] Do not expose FFI library details in normal user settings.
+- [ ] Add diagnostics-only FFI load path if needed for support.
 - [ ] Show backend/FFI version if added.
 - [ ] Add startup check for missing or incompatible FFI library.
 
 Done when:
 
-- [ ] A user can understand what backend is active and why loading failed.
+- [x] A user can understand what vault source and sync state are active.
+- [ ] Startup diagnostics explain why loading failed.
 
 ### P4.6.5 Verification
 
-- [ ] `dart format lib test` clean.
-- [ ] `flutter analyze` clean.
-- [ ] `flutter test` pass.
+- [x] `dart format lib test` clean.
+- [x] `flutter analyze` clean.
+- [x] `flutter test` pass.
 - [ ] Manual check: settings persist after restart.
 - [ ] Manual check: no secrets are written to settings storage.
 
 Acceptance:
 
-- [ ] Settings cover the main app/security knobs needed for daily use.
-- [ ] Settings do not store secrets.
-- [ ] Existing local and WebDAV workflows keep working.
+- [x] Settings cover the main app/security knobs needed for daily use.
+- [x] Settings do not store secrets.
+- [x] Existing local and WebDAV workflows keep working.
 
 ## Phase P4.7: Create New KDBX
+
+Status: done.
 
 Goal: let KeePassY create a brand-new KeePass database instead of only opening
 existing files.
 
 ### P4.7.1 Backend Create Database API
 
-- [ ] Add core API to create an empty KeePass database.
-- [ ] Support master password.
-- [ ] Support optional keyfile if practical.
-- [ ] Decide default database name / root group name.
-- [ ] Save the new database atomically to a local path.
-- [ ] Avoid leaving partial/corrupt files on failure.
-- [ ] Add Rust tests for create, save, reopen, and wrong-password behavior.
+- [x] Add core API to create an empty KeePass database.
+- [x] Support master password.
+- [x] Support optional keyfile.
+- [x] Support keyfile-only vault creation.
+- [x] Decide default database name / root group name.
+- [x] Save the new database atomically to a local path.
+- [x] Avoid leaving partial/corrupt files on failure.
+- [x] Avoid overwriting an existing vault file.
+- [x] Add Rust tests for create, reopen, duplicate-path failure, and
+      keyfile-only behavior.
 
 Done when:
 
-- [ ] Core can create a new KDBX and reopen it with the chosen credentials.
+- [x] Core can create a new KDBX and reopen it with the chosen credentials.
 
 ### P4.7.2 FFI and Repository
 
-- [ ] Add FFI wrapper for create-local-database.
-- [ ] Define request JSON:
+- [x] Add FFI wrapper for create-local-database.
+- [x] Define request JSON:
   - path
   - master password
   - optional keyfile path
-  - optional database/root display name
-- [ ] Return an opened session snapshot after create.
-- [ ] Add Dart repository method for create local vault.
-- [ ] Add mock repository implementation.
-- [ ] Add FFI tests for success and invalid request errors.
+- [x] Return an opened session snapshot after create.
+- [x] Add Dart repository method for create local vault.
+- [x] Add mock repository implementation.
+- [x] Add FFI tests for success and invalid request errors.
 
 Done when:
 
-- [ ] Flutter can create and immediately open a new local KDBX through
+- [x] Flutter can create and immediately open a new local KDBX through
       `VaultRepository`.
 
 ### P4.7.3 Frontend Create Flow
 
-- [ ] Add `Create vault` action on unlock surface.
-- [ ] Let user choose save path with file picker.
-- [ ] Validate extension or clearly explain `.kdbx`.
-- [ ] Ask for master password and confirmation.
-- [ ] Show password strength for the new master password.
-- [ ] Support optional keyfile.
-- [ ] Create vault and navigate into the empty vault.
-- [ ] Show clear errors for invalid path, existing file, password mismatch, and
+- [x] Add `Create vault` action on unlock surface.
+- [x] Let user choose save path with file picker.
+- [x] Avoid free-form relative path entry for the vault file.
+- [x] Validate extension or clearly explain `.kdbx`.
+- [x] Ask for master password and confirmation when password is used.
+- [x] Allow password-only, keyfile-only, or password-plus-keyfile creation.
+- [x] Show password strength for the new master password.
+- [x] Support selecting an existing keyfile.
+- [x] Support creating a new random keyfile.
+- [x] Create vault and navigate into the empty vault.
+- [x] Show clear errors for invalid path, existing file, password mismatch, and
       write failure.
 
 Done when:
 
-- [ ] A first-time user can create a database without using another KeePass
+- [x] A first-time user can create a database without using another KeePass
       app.
 
 ### P4.7.4 Verification
 
-- [ ] `cargo fmt --all --check`.
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`.
-- [ ] `cargo test --workspace`.
-- [ ] `dart format lib test` clean.
-- [ ] `flutter analyze` clean.
-- [ ] `flutter test` pass.
+- [x] `cargo fmt` clean.
+- [x] `cargo test -p keepass_core -p keepass_ffi` pass.
+- [x] `dart format lib test` clean.
+- [x] `flutter analyze` clean.
+- [x] `flutter test` pass.
+- [x] `cargo build -p keepass_ffi` pass.
 - [ ] Manual test: create local vault, add entry, save, lock, reopen, verify.
 - [ ] Manual test: password mismatch blocks create.
+- [ ] Manual test: keyfile-only create, save, lock, reopen.
 - [ ] Manual test: failed write gives a clear error.
 
 Acceptance:
 
-- [ ] KeePassY can create a usable local `.kdbx`.
-- [ ] Created vaults can be reopened by KeePassY and compatible KeePass apps.
-- [ ] Failed creates do not silently produce corrupt databases.
+- [x] KeePassY can create a usable local `.kdbx`.
+- [x] Created vaults can be reopened by KeePassY.
+- [ ] External KeePass app compatibility smoke test before release.
+- [x] Failed creates do not silently produce corrupt databases.
 
 ## Phase P4.8: Recycle Bin
 

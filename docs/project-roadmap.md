@@ -196,34 +196,47 @@ Acceptance:
 
 ## Phase P4.6: Settings Foundation
 
+Status: mostly done.
+
 Goal: add practical app, security, vault, and backend settings before adding
 more workflows.
 
-- [ ] Add a Settings surface reachable from the app.
-- [ ] Persist non-secret app preferences.
-- [ ] Add theme, density, default source, auto-lock, and clipboard timeout
+- [x] Add a Settings surface reachable from the app.
+- [x] Persist non-secret app preferences.
+- [x] Add theme, default source, auto-lock, and clipboard timeout
       controls.
-- [ ] Show vault source, WebDAV metadata, and backend/FFI status.
+- [ ] Add density controls.
+- [x] Show vault source and WebDAV metadata where relevant.
+- [x] Keep backend/FFI internals out of the normal user settings surface.
 - [ ] Add startup checks for missing or incompatible FFI library.
 
 Acceptance:
 
-- [ ] Main app/security preferences persist without storing secrets.
-- [ ] Users can inspect active vault and backend status.
+- [x] Main app/security preferences persist without storing secrets.
+- [x] Users can inspect active vault and sync status.
+- [ ] Startup diagnostics cover missing or incompatible FFI libraries.
 
 ## Phase P4.7: Create New KDBX
 
+Status: done.
+
 Goal: let KeePassY create a new local KeePass database and immediately open it.
 
-- [ ] Add Rust core API to create and save an empty database.
-- [ ] Expose create-local-vault through FFI and `VaultRepository`.
-- [ ] Add Flutter create-vault flow with path picker, password confirmation,
-      strength feedback, and optional keyfile.
-- [ ] Ensure failed creates do not leave corrupt files.
+- [x] Add Rust core API to create and save an empty database.
+- [x] Expose create-local-vault through FFI and `VaultRepository`.
+- [x] Add Flutter create-vault flow with save-location picker, password
+      confirmation, strength feedback, and optional keyfile.
+- [x] Support password-only, keyfile-only, and password-plus-keyfile creation.
+- [x] Support creating a new random keyfile from the create flow.
+- [x] Ensure failed creates do not leave corrupt files or overwrite existing
+      vault files.
 
 Acceptance:
 
-- [ ] A new `.kdbx` can be created, opened, edited, saved, locked, and reopened.
+- [x] A new `.kdbx` can be created and immediately opened.
+- [x] Created `.kdbx` files can be reopened by KeePassY with the chosen
+      credentials.
+- [ ] Run an external KeePass compatibility smoke test before release.
 
 ## Phase P4.8: Recycle Bin
 
@@ -279,13 +292,13 @@ Acceptance:
 
 ## Recommended Next Sprint
 
-Sprint goal: settings foundation.
+Sprint goal: Recycle Bin.
 
-1. Add a Settings surface.
-2. Persist non-secret app preferences.
-3. Add theme, auto-lock, clipboard timeout, and default source controls.
-4. Show vault and FFI/backend status.
-5. Run local and WebDAV smoke tests to prove no feature regressions.
+1. Identify or create the KeePass-compatible Recycle Bin group.
+2. Move normal deletes to Recycle Bin instead of hard-deleting.
+3. Track enough original group metadata to make restore reliable.
+4. Add restore, permanent delete, and empty-bin actions.
+5. Run local create/open/save/reopen smoke tests, including keyfile-only vaults.
 
 Run backend checks:
 
