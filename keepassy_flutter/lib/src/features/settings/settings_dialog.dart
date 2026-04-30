@@ -7,11 +7,9 @@ class SettingsDialog extends StatefulWidget {
   const SettingsDialog({
     super.key,
     required this.settingsService,
-    this.showBackendInfo = false,
   });
 
   final SettingsService settingsService;
-  final bool showBackendInfo;
 
   @override
   State<SettingsDialog> createState() => _SettingsDialogState();
@@ -37,8 +35,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final settings = widget.settingsService.settings;
-
     return AlertDialog(
       title: const Text('Settings'),
       content: SingleChildScrollView(
@@ -138,16 +134,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 },
               ),
 
-              if (widget.showBackendInfo) ...[
-                const SizedBox(height: 24),
-                _SectionHeader(title: 'Backend', icon: Icons.memory_outlined),
-                const SizedBox(height: 12),
-                _InfoRow(label: 'Source', value: settings.lastLocalPath ?? 'Not set'),
-                _InfoRow(
-                  label: 'FFI library',
-                  value: 'libkeepass_ffi.so',
-                ),
-              ],
             ],
           ),
         ),
@@ -181,24 +167,3 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(label, style: TextStyle(color: cs.onSurfaceVariant))),
-          Expanded(child: Text(value)),
-        ],
-      ),
-    );
-  }
-}

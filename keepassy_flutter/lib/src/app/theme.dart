@@ -1,16 +1,30 @@
 import 'package:flutter/material.dart';
 
 const _seed = Color(0xFF19745B);
-const _surface = Color(0xFFF6F4EF);
-const _panel = Color(0xFFFCFBF7);
-const _ink = Color(0xFF20231F);
+
+// Light
+const _lightSurface = Color(0xFFF6F4EF);
+const _lightPanel = Color(0xFFFCFBF7);
+const _lightInk = Color(0xFF20231F);
+const _lightSurfaceLow = Color(0xFFF0EEE7);
+const _lightOutline = Color(0xFFD8D4C9);
+
+// Dark
+const _darkSurface = Color(0xFF1A1D1A);
+const _darkPanel = Color(0xFF222622);
+const _darkInk = Color(0xFFE3E3DD);
+const _darkSurfaceLow = Color(0xFF252825);
+const _darkOutline = Color(0xFF44483F);
 
 ThemeData buildKeepassYTheme({Brightness brightness = Brightness.light}) {
   final isDark = brightness == Brightness.dark;
+  final ink = isDark ? _darkInk : _lightInk;
+  final surface = isDark ? _darkSurface : _lightSurface;
+
   final scheme = ColorScheme.fromSeed(
     seedColor: _seed,
     brightness: brightness,
-    surface: isDark ? const Color(0xFF1A1D1A) : _surface,
+    surface: surface,
   );
 
   return ThemeData(
@@ -18,20 +32,19 @@ ThemeData buildKeepassYTheme({Brightness brightness = Brightness.light}) {
     colorScheme: scheme.copyWith(
       primary: isDark ? const Color(0xFF43A684) : _seed,
       onPrimary: isDark ? const Color(0xFF003825) : Colors.white,
-      surface: isDark ? const Color(0xFF1A1D1A) : _surface,
-      surfaceContainerLowest: isDark ? const Color(0xFF151815) : _panel,
-      surfaceContainerLow: isDark ? const Color(0xFF1E211E) : const Color(0xFFF0EEE7),
-      outlineVariant: isDark ? const Color(0xFF44483F) : const Color(0xFFD8D4C9),
+      surface: surface,
+      surfaceContainerLowest: isDark ? _darkPanel : _lightPanel,
+      surfaceContainerLow: isDark ? _darkSurfaceLow : _lightSurfaceLow,
+      outlineVariant: isDark ? _darkOutline : _lightOutline,
     ),
-    scaffoldBackgroundColor: isDark ? const Color(0xFF1A1D1A) : _surface,
+    scaffoldBackgroundColor: surface,
     fontFamily: 'Roboto',
-    textTheme: Typography.blackMountainView.apply(
-      bodyColor: _ink,
-      displayColor: _ink,
-    ),
-    appBarTheme: const AppBarTheme(
-      backgroundColor: _panel,
-      foregroundColor: _ink,
+    textTheme: ThemeData(brightness: brightness)
+        .textTheme
+        .apply(bodyColor: ink, displayColor: ink),
+    appBarTheme: AppBarTheme(
+      backgroundColor: isDark ? _darkPanel : _lightPanel,
+      foregroundColor: ink,
       centerTitle: false,
       elevation: 0,
       scrolledUnderElevation: 0,
@@ -40,10 +53,11 @@ ThemeData buildKeepassYTheme({Brightness brightness = Brightness.light}) {
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFD8D4C9)),
+        borderSide: BorderSide(
+            color: isDark ? _darkOutline : _lightOutline),
       ),
       filled: true,
-      fillColor: _panel,
+      fillColor: isDark ? _darkPanel : _lightPanel,
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -62,8 +76,8 @@ ThemeData buildKeepassYTheme({Brightness brightness = Brightness.light}) {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
-    dividerTheme: const DividerThemeData(
-      color: Color(0xFFD8D4C9),
+    dividerTheme: DividerThemeData(
+      color: isDark ? _darkOutline : _lightOutline,
       space: 1,
       thickness: 1,
     ),

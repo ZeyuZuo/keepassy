@@ -165,6 +165,7 @@ class _VaultPageState extends State<VaultPage> {
   int _sortMode = 0; // 0=title, 1=username, 2=modified
   Timer? _autoLockTimer;
   Timer? _inactivityTimer;
+  Timer? _clipboardTimer;
   final Set<String> _selectedEntryIds = {};
   final Set<String> _visibleCustomFields = {};
   late int _autoLockMinutes;
@@ -191,7 +192,9 @@ class _VaultPageState extends State<VaultPage> {
 
   void _resetInactivityTimer() {
     _inactivityTimer?.cancel();
-    _inactivityTimer = Timer(Duration(minutes: _autoLockMinutes), _autoLock);
+    if (_autoLockMinutes > 0) {
+      _inactivityTimer = Timer(Duration(minutes: _autoLockMinutes), _autoLock);
+    }
   }
 
   void _autoLock() {
@@ -210,10 +213,31 @@ class _VaultPageState extends State<VaultPage> {
     );
   }
 
+  void _onCopyToClipboard(String value, String label) {
+    Clipboard.setData(ClipboardData(text: value));
+    _clipboardTimer?.cancel();
+    final secs =
+        widget.settingsService?.settings.clipboardClearSeconds ?? 30;
+    if (secs > 0) {
+      _clipboardTimer = Timer(Duration(seconds: secs), () {
+        Clipboard.setData(const ClipboardData(text: ''));
+      });
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$label copied to clipboard'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _autoLockTimer?.cancel();
     _inactivityTimer?.cancel();
+    _clipboardTimer?.cancel();
     _editTitleController.dispose();
     _editUsernameController.dispose();
     _editPasswordController.dispose();
@@ -1632,7 +1656,6 @@ class _VaultPageState extends State<VaultPage> {
                       context: context,
                       builder: (_) => SettingsDialog(
                         settingsService: widget.settingsService!,
-                        showBackendInfo: true,
                       ),
                     );
                   case _MoreAction.remoteMetadata:
@@ -1788,6 +1811,7 @@ class _VaultPageState extends State<VaultPage> {
                       visibleCustomFields: _visibleCustomFields,
                       clipboardClearSeconds:
                           widget.settingsService?.settings.clipboardClearSeconds ?? 30,
+                      onCopyToClipboard: _onCopyToClipboard,
                       onToggleCustomFieldVisibility: (key) {
                         setState(() {
                           if (_visibleCustomFields.contains(key)) {
@@ -2534,8 +2558,7 @@ class _EntryRow extends StatelessWidget {
 }
 
 class _DetailPane extends StatelessWidget {
-  // ignore: must_be_immutable
-  _DetailPane({
+  const _DetailPane({
     required this.detail,
     required this.loading,
     required this.passwordVisible,
@@ -2570,6 +2593,7 @@ class _DetailPane extends StatelessWidget {
     this.selectedEntry,
     this.visibleCustomFields = const {},
     this.onToggleCustomFieldVisibility,
+    this.onCopyToClipboard,
     this.clipboardClearSeconds = 30,
   });
 
@@ -2607,6 +2631,7 @@ class _DetailPane extends StatelessWidget {
   final EntrySummary? selectedEntry;
   final Set<String> visibleCustomFields;
   final void Function(String)? onToggleCustomFieldVisibility;
+  final void Function(String, String)? onCopyToClipboard;
   final int clipboardClearSeconds;
 
   @override
@@ -2656,7 +2681,7 @@ class _DetailPane extends StatelessWidget {
             if (detail.password != null && detail.password!.isNotEmpty)
               IconButton(
                 tooltip: 'Copy password',
-                onPressed: () => _copyToClipboard(context, detail.password!, 'Password'),
+                onPressed: () => onCopyToClipboard?.call(detail.password!, 'Password'),
                 icon: const Icon(Icons.key),
               ),
             IconButton(
@@ -2995,7 +3020,7 @@ class _DetailPane extends StatelessWidget {
                     IconButton(
                       tooltip: 'Copy ${entry.key}',
                       onPressed: () =>
-                          _copyToClipboard(context, entry.value, entry.key),
+                          onCopyToClipboard?.call(entry.value, entry.key),
                       icon: const Icon(Icons.copy, size: 18),
                     ),
                   if (onRemoveCustomField != null)
@@ -3048,7 +3073,7 @@ class _DetailPane extends StatelessWidget {
             if (value.isNotEmpty)
               IconButton(
                 tooltip: 'Copy $fieldKey',
-                onPressed: () => _copyToClipboard(context, value, fieldKey),
+                onPressed: () => onCopyToClipboard?.call(value, fieldKey),
                 icon: const Icon(Icons.copy, size: 18),
               ),
             IconButton(
@@ -3071,7 +3096,7 @@ class _DetailPane extends StatelessWidget {
       trailing: value.isNotEmpty
           ? IconButton(
               tooltip: 'Copy $fieldKey',
-              onPressed: () => _copyToClipboard(context, value, fieldKey),
+              onPressed: () => onCopyToClipboard?.call(value, fieldKey),
               icon: const Icon(Icons.copy, size: 18),
             )
           : null,
@@ -3091,7 +3116,7 @@ class _DetailPane extends StatelessWidget {
       trailing: value.isNotEmpty
           ? IconButton(
               tooltip: 'Copy $label',
-              onPressed: () => _copyToClipboard(context, value, label),
+              onPressed: () => onCopyToClipboard?.call(value, label),
               icon: const Icon(Icons.copy, size: 18),
             )
           : null,
@@ -3114,7 +3139,7 @@ class _DetailPane extends StatelessWidget {
           if (value.isNotEmpty)
             IconButton(
               tooltip: 'Copy password',
-              onPressed: () => _copyToClipboard(context, value, 'Password'),
+              onPressed: () => onCopyToClipboard?.call(value, 'Password'),
               icon: const Icon(Icons.copy, size: 18),
             ),
           IconButton(
@@ -3131,29 +3156,6 @@ class _DetailPane extends StatelessWidget {
     );
   }
 
-  Timer? _clipboardTimer;
-
-  void _copyToClipboard(
-    BuildContext context,
-    String value,
-    String label,
-  ) {
-    Clipboard.setData(ClipboardData(text: value));
-    _clipboardTimer?.cancel();
-    if (clipboardClearSeconds > 0) {
-      _clipboardTimer = Timer(Duration(seconds: clipboardClearSeconds), () {
-        Clipboard.setData(const ClipboardData(text: ''));
-      });
-    }
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('$label copied to clipboard'),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
 }
 
 class _FieldEntry {

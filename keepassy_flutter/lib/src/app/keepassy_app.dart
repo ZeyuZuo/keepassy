@@ -8,7 +8,8 @@ import '../settings/settings_service.dart';
 import 'theme.dart';
 
 class KeepassYApp extends StatefulWidget {
-  const KeepassYApp({super.key, VaultRepository? repository, SettingsService? settingsService})
+  const KeepassYApp(
+      {super.key, VaultRepository? repository, SettingsService? settingsService})
     : _repository = repository,
       _settingsService = settingsService;
 
@@ -37,13 +38,18 @@ class KeepassYApp extends StatefulWidget {
 
 class _KeepassYAppState extends State<KeepassYApp> {
   late final SettingsService _settingsService;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     _settingsService = widget._settingsService ?? SettingsService();
     _settingsService.addListener(() => setState(() {}));
-    _settingsService.load();
+    _settingsService.load().then((_) {
+      if (mounted) setState(() => _loadGeneration++);
+    }).catchError((_) {
+      if (mounted) setState(() => _loadGeneration++);
+    });
   }
 
   @override
@@ -69,6 +75,7 @@ class _KeepassYAppState extends State<KeepassYApp> {
       home: Stack(
         children: [
           UnlockPage(
+            key: ValueKey('unlock-$_loadGeneration'),
             repository: repository,
             settingsService: _settingsService,
           ),
@@ -86,7 +93,8 @@ class _KeepassYAppState extends State<KeepassYApp> {
                 actions: [
                   TextButton(
                     onPressed: () {
-                      ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+                      ScaffoldMessenger.of(context)
+                          .hideCurrentMaterialBanner();
                     },
                     child: const Text('Dismiss'),
                   ),
