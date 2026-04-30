@@ -28,16 +28,23 @@ Backend:
 
 - Rust workspace exists under `keepass-rs`.
 - Local `.kdbx` open, tree, entries, and details are implemented.
-- WebDAV read and save foundation exists.
-- Entry create, update, delete, save, keyfile, custom fields, attachments, and history support exist in core.
-- Plain C ABI adapter exists for local session workflows and JSON responses.
+- WebDAV open/save and conflict detection are implemented.
+- Entry create, update, delete, move, duplicate support, save, keyfile, custom
+  fields, attachments, history, expiry, groups, and change-password support
+  exist in core/FFI as needed by Flutter.
+- Plain C ABI adapter exists for local and WebDAV session workflows and JSON
+  responses.
 
 Frontend:
 
 - Flutter project exists under `keepassy_flutter`.
-- Unlock and vault browsing surfaces are scaffolded.
-- Dart DTOs and `VaultRepository` boundary exist.
-- UI currently uses mock data.
+- Unlock supports local file and WebDAV sources.
+- Vault browsing, editing, attachments, custom fields, history, group
+  management, save/dirty state, auto-lock, clipboard clearing, and WebDAV
+  conflict UX are implemented through `VaultRepository`.
+- First UX/UI refactor pass is complete: clearer unlock flow, simplified vault
+  app bar, three-pane workspace, detail-pane actions, status chip, and keyboard
+  shortcuts.
 
 ## Phase P0: Repository and Documentation Baseline
 
@@ -60,23 +67,23 @@ Goal: open and browse a real local KeePass database from Flutter.
 
 Backend tasks:
 
-- [ ] Confirm `keepass_ffi` exposes every read-only function needed by Flutter.
-- [ ] Produce a Linux shared library artifact for `keepass_ffi`.
-- [ ] Document development build command and output path.
-- [ ] Add FFI smoke test or small C/Dart harness if practical.
+- [x] Confirm `keepass_ffi` exposes every read-only function needed by Flutter.
+- [x] Produce a Linux shared library artifact for `keepass_ffi`.
+- [x] Document development build command and output path.
+- [x] Add FFI smoke test or small C/Dart harness if practical.
 
 Frontend tasks:
 
-- [ ] Add native file picker for `.kdbx` and optional keyfile.
-- [ ] Implement `FfiVaultRepository`.
-- [ ] Map Rust FFI errors into user-safe frontend errors.
-- [ ] Open local vault, read group tree, list entries, and show entry detail from real data.
+- [x] Add native file picker for `.kdbx` and optional keyfile.
+- [x] Implement `FfiVaultRepository`.
+- [x] Map Rust FFI errors into user-safe frontend errors.
+- [x] Open local vault, read group tree, list entries, and show entry detail from real data.
 
 Acceptance:
 
-- [ ] Flutter opens a real local `.kdbx`.
-- [ ] User can browse groups and details without mock data.
-- [ ] Locking the vault closes the Rust session.
+- [x] Flutter opens a real local `.kdbx`.
+- [x] User can browse groups and details without mock data.
+- [x] Locking the vault closes the Rust session.
 
 ## Phase P2: Local Editing and Explicit Save
 
@@ -84,22 +91,23 @@ Goal: support the main password-manager workflow for local files.
 
 Backend tasks:
 
-- [ ] Ensure FFI exposes create, update, delete, save, custom field, and attachment operations needed by UI.
-- [ ] Add missing FFI wrappers where core already has support.
-- [ ] Keep save error messages specific enough for UI decisions.
+- [x] Ensure FFI exposes create, update, delete, save, custom field, and attachment operations needed by UI.
+- [x] Add missing FFI wrappers where core already has support.
+- [x] Keep save error messages specific enough for UI decisions.
 
 Frontend tasks:
 
-- [ ] Add create/edit/delete entry flows.
-- [ ] Add dirty state and save status.
-- [ ] Add unsaved-change prompts for lock and app close.
-- [ ] Add copy actions and clipboard clear timer.
+- [x] Add create/edit/delete entry flows.
+- [x] Add dirty state and save status.
+- [x] Add unsaved-change prompts for lock.
+- [ ] Add unsaved-change prompts for app close.
+- [x] Add copy actions and clipboard clear timer.
 
 Acceptance:
 
-- [ ] User can create, edit, delete, save, close, reopen, and verify changes.
-- [ ] Failed save does not lose in-memory edits.
-- [ ] Password values remain hidden outside explicit reveal/copy actions.
+- [x] User can create, edit, delete, save, close, reopen, and verify changes.
+- [x] Failed save does not lose in-memory edits.
+- [x] Password values remain hidden outside explicit reveal/copy actions.
 
 ## Phase P3: Advanced Local Features
 
@@ -107,21 +115,21 @@ Goal: expose KeePass features that matter after the basic edit loop is stable.
 
 Backend tasks:
 
-- [ ] Close any FFI gaps for attachment removal and history detail.
-- [ ] Keep large attachment bytes behind separate calls.
-- [ ] Add tests for FFI JSON shape for advanced calls.
+- [x] Close any FFI gaps for attachment removal and history detail.
+- [x] Keep large attachment bytes behind separate calls.
+- [x] Add tests for FFI JSON shape for advanced calls.
 
 Frontend tasks:
 
-- [ ] Add attachment list, export, add/replace, and remove flows.
-- [ ] Add custom field management.
-- [ ] Add history list and read-only history detail.
-- [ ] Add password generator if it can stay frontend-owned without weakening backend rules.
+- [x] Add attachment list, export, add/replace, and remove flows.
+- [x] Add custom field management.
+- [x] Add history list and read-only history detail.
+- [x] Add password generator if it can stay frontend-owned without weakening backend rules.
 
 Acceptance:
 
-- [ ] Advanced features are reachable from entry detail without crowding the primary fields.
-- [ ] Attachment bytes are loaded only when the user requests them.
+- [x] Advanced features are reachable from entry detail without crowding the primary fields.
+- [x] Attachment bytes are loaded only when the user requests them.
 
 ## Pre-WebDAV Local Parity
 
@@ -159,6 +167,79 @@ Acceptance:
 
 - [x] User can open and save a WebDAV vault.
 - [x] Remote conflicts never silently overwrite server data.
+
+## Phase P4.5: Frontend UX/UI Refactor
+
+Goal: preserve the complete local and WebDAV feature set while improving the
+Flutter app's visual hierarchy, button placement, and day-to-day interaction
+logic before release packaging.
+
+Frontend tasks:
+
+- [x] Redesign the unlock flow so Local file and WebDAV are clear source modes.
+- [x] Reduce the vault app bar to global actions and move low-frequency actions
+      into menus.
+- [x] Clarify the three-pane workspace: groups, entries, detail.
+- [x] Move selected-entry actions into the detail header.
+- [x] Make saved, dirty, failed, and conflict states persistent and easy to
+      understand.
+- [x] Consolidate shared visual components, spacing, and icon button rules.
+- [x] Preserve all current repository, FFI, local, and WebDAV behavior.
+
+Acceptance:
+
+- [x] All existing features remain reachable.
+- [x] Button placement matches the object being acted on.
+- [x] Local and WebDAV unlock flows are visually distinct.
+- [x] The app feels calmer and more consistent without losing information
+      density.
+
+## Phase P4.6: Settings Foundation
+
+Goal: add practical app, security, vault, and backend settings before adding
+more workflows.
+
+- [ ] Add a Settings surface reachable from the app.
+- [ ] Persist non-secret app preferences.
+- [ ] Add theme, density, default source, auto-lock, and clipboard timeout
+      controls.
+- [ ] Show vault source, WebDAV metadata, and backend/FFI status.
+- [ ] Add startup checks for missing or incompatible FFI library.
+
+Acceptance:
+
+- [ ] Main app/security preferences persist without storing secrets.
+- [ ] Users can inspect active vault and backend status.
+
+## Phase P4.7: Create New KDBX
+
+Goal: let KeePassY create a new local KeePass database and immediately open it.
+
+- [ ] Add Rust core API to create and save an empty database.
+- [ ] Expose create-local-vault through FFI and `VaultRepository`.
+- [ ] Add Flutter create-vault flow with path picker, password confirmation,
+      strength feedback, and optional keyfile.
+- [ ] Ensure failed creates do not leave corrupt files.
+
+Acceptance:
+
+- [ ] A new `.kdbx` can be created, opened, edited, saved, locked, and reopened.
+
+## Phase P4.8: Recycle Bin
+
+Goal: make delete recoverable through KeePass-compatible Recycle Bin semantics.
+
+- [ ] Identify or create the Recycle Bin group.
+- [ ] Track original entry group metadata for reliable restore.
+- [ ] Move normal deletes to Recycle Bin instead of hard-deleting.
+- [ ] Add restore, permanent delete, and empty-bin actions.
+- [ ] Add backend, FFI, repository, and UI tests.
+
+Acceptance:
+
+- [ ] Accidentally deleted entries can be restored to their original group when
+      possible.
+- [ ] Permanent deletion is explicit and confirmed.
 
 ## Phase P5: Desktop Release Quality
 
@@ -198,13 +279,13 @@ Acceptance:
 
 ## Recommended Next Sprint
 
-Sprint goal: desktop release quality.
+Sprint goal: settings foundation.
 
-1. Define the release artifact layout for the Rust shared library.
-2. Bundle `libkeepass_ffi.so` with the Flutter Linux build.
-3. Add app icon, desktop metadata, and startup checks.
-4. Verify local and WebDAV smoke tests against a release build.
-5. Audit startup/runtime errors for clear, secret-safe messages.
+1. Add a Settings surface.
+2. Persist non-secret app preferences.
+3. Add theme, auto-lock, clipboard timeout, and default source controls.
+4. Show vault and FFI/backend status.
+5. Run local and WebDAV smoke tests to prove no feature regressions.
 
 Run backend checks:
 
