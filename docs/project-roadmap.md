@@ -264,21 +264,22 @@ Goal: make KeePassY practical to run outside development.
 
 Backend tasks:
 
-- [ ] Define release artifact layout for Rust shared library.
-- [ ] Add version reporting for backend and FFI.
+- [x] Define release artifact layout for Rust shared library.
+- [x] Add version reporting for backend and FFI.
 - [ ] Audit error messages for secret leakage.
 
 Frontend tasks:
 
-- [ ] Package Linux desktop build with the Rust shared library.
-- [ ] Add app icon, desktop metadata, and startup checks.
-- [ ] Add auto-lock, clipboard timeout, and keyboard shortcuts.
-- [ ] Add app-level error boundary and recovery options.
+- [x] Package Linux desktop build with the Rust shared library.
+- [x] Add app icon, desktop metadata, and startup checks.
+- [x] Add auto-lock, clipboard timeout, and keyboard shortcuts.
+- [x] Add app-level startup failure view and recovery guidance.
+- [x] Add dirty-state prompt for app/window close.
 
 Acceptance:
 
 - [ ] A release build can be installed and launched on Linux.
-- [ ] App startup verifies the bundled FFI library is loadable.
+- [x] App startup verifies the bundled FFI library is loadable.
 - [ ] Basic local workflows pass release smoke testing.
 
 ## Phase P6: Cross-Platform Expansion
@@ -296,13 +297,14 @@ Acceptance:
 
 ## Recommended Next Sprint
 
-Sprint goal: Recycle Bin.
+Sprint goal: finish P5 release smoke testing.
 
-1. Identify or create the KeePass-compatible Recycle Bin group.
-2. Move normal deletes to Recycle Bin instead of hard-deleting.
-3. Track enough original group metadata to make restore reliable.
-4. Add restore, permanent delete, and empty-bin actions.
-5. Run local create/open/save/reopen smoke tests, including keyfile-only vaults.
+1. Launch `dist/linux/KeePassY/keepassy_flutter` on a clean Linux environment.
+2. Open a local vault, browse entries, edit, save, lock, reopen, and verify.
+3. Test wrong password, missing keyfile, and missing FFI library startup paths.
+4. Audit user-facing errors for secret leakage.
+5. Decide whether Linux menu actions and a stricter minimum window size are
+   needed before tagging a release.
 
 Run backend checks:
 

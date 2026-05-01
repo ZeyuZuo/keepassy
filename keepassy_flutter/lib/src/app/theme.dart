@@ -39,9 +39,9 @@ ThemeData buildKeepassYTheme({Brightness brightness = Brightness.light}) {
     ),
     scaffoldBackgroundColor: surface,
     fontFamily: 'Roboto',
-    textTheme: ThemeData(brightness: brightness)
-        .textTheme
-        .apply(bodyColor: ink, displayColor: ink),
+    textTheme: ThemeData(
+      brightness: brightness,
+    ).textTheme.apply(bodyColor: ink, displayColor: ink),
     appBarTheme: AppBarTheme(
       backgroundColor: isDark ? _darkPanel : _lightPanel,
       foregroundColor: ink,
@@ -53,8 +53,7 @@ ThemeData buildKeepassYTheme({Brightness brightness = Brightness.light}) {
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(
-            color: isDark ? _darkOutline : _lightOutline),
+        borderSide: BorderSide(color: isDark ? _darkOutline : _lightOutline),
       ),
       filled: true,
       fillColor: isDark ? _darkPanel : _lightPanel,

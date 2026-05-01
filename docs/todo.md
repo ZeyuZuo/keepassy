@@ -860,13 +860,15 @@ Goal: ship a practical Linux desktop build.
 
 ### P5.1 Packaging
 
-- [ ] Decide release artifact layout.
-- [ ] Bundle `libkeepass_ffi.so` with Flutter Linux build.
-- [ ] Verify runtime library loading from bundled path.
-- [ ] Add app icon.
-- [ ] Add desktop metadata.
-- [ ] Add release build command documentation.
-- [ ] Add startup check for missing or incompatible FFI library.
+- [x] Decide release artifact layout:
+      `dist/linux/KeePassY/{keepassy_flutter,lib/,data/,share/}`.
+- [x] Bundle `libkeepass_ffi.so` with Flutter Linux build.
+- [x] Verify runtime library loading from bundled path.
+- [x] Add app icon.
+- [x] Add desktop metadata.
+- [x] Add release build command documentation through
+      `scripts/build_linux_release.sh`.
+- [x] Add startup check for missing or incompatible FFI library.
 
 Done when:
 
@@ -874,12 +876,12 @@ Done when:
 
 ### P5.2 Security and Session Hardening
 
-- [ ] Add auto-lock timer.
+- [x] Add auto-lock timer.
 - [ ] Add lock on suspend or window inactivity if feasible.
-- [ ] Clear clipboard after timeout.
-- [ ] Clear sensitive UI state on lock.
+- [x] Clear clipboard after timeout.
+- [x] Clear sensitive UI state on lock.
 - [ ] Audit logs for secret leakage.
-- [ ] Avoid storing master password in app-wide state.
+- [x] Avoid storing master password in app-wide state.
 - [ ] Document what remains in process memory during an open session.
 
 Done when:
@@ -889,13 +891,14 @@ Done when:
 ### P5.3 Desktop Interaction Polish
 
 - [ ] Add keyboard shortcut for search.
-- [ ] Add keyboard shortcut for save.
-- [ ] Add keyboard shortcut for lock.
-- [ ] Add keyboard shortcut for create entry.
-- [ ] Add keyboard shortcut for copy password.
+- [x] Add keyboard shortcut for save.
+- [x] Add keyboard shortcut for lock.
+- [x] Add keyboard shortcut for create entry.
+- [x] Add keyboard shortcut for copy password.
 - [ ] Add menu actions if needed for Linux desktop conventions.
 - [ ] Add minimum window size.
 - [ ] Verify responsive layout at narrow and wide desktop widths.
+- [x] Prompt before app/window close when dirty.
 
 Done when:
 
@@ -903,8 +906,8 @@ Done when:
 
 ### P5.4 Release Smoke Tests
 
-- [ ] Build Rust release library.
-- [ ] Build Flutter Linux release.
+- [x] Build Rust release library.
+- [x] Build Flutter Linux release.
 - [ ] Launch packaged app.
 - [ ] Open local vault.
 - [ ] Browse entry detail.

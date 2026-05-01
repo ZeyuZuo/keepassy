@@ -1,0 +1,25 @@
+[workspace]
+members = [
+    "crates/keepass_core",
+    "crates/keepass_cli",
+    "crates/keepass_ffi",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://example.invalid/keepass-rs"
+rust-version = "1.80"
+
+[workspace.dependencies]
+async-trait = "0.1"
+clap = { version = "4.5", features = ["derive", "env"] }
+keepass = { version = "=0.10.1", features = ["save_kdbx4"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rpassword = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread"] }
+url = "2"

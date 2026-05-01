@@ -1,0 +1,6 @@
+/target/
+*.kdbx
+*.key
+*.log
+.env
+.DS_Store

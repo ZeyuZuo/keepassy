@@ -51,6 +51,7 @@ class VaultPage extends StatefulWidget {
     required this.masterPassword,
     this.keyfilePath,
     this.settingsService,
+    this.backendInfo,
   });
 
   final VaultRepository repository;
@@ -58,6 +59,7 @@ class VaultPage extends StatefulWidget {
   final String masterPassword;
   final String? keyfilePath;
   final SettingsService? settingsService;
+  final BackendInfo? backendInfo;
 
   @override
   State<VaultPage> createState() => _VaultPageState();
@@ -2083,6 +2085,11 @@ class _VaultPageState extends State<VaultPage> {
                       history: _history,
                       loadingHistory: _loadingHistory,
                       selectedEntry: _selectedEntry,
+                      clipboardClearSeconds:
+                          widget.settingsService?.settings
+                                  .clipboardClearSeconds ??
+                              30,
+                      onCopyToClipboard: _onCopyToClipboard,
                       visibleCustomFields: _visibleCustomFields,
                       onToggleCustomFieldVisibility: (key) {
                         setState(() {

@@ -4,6 +4,18 @@ import 'dart:typed_data';
 
 import '../models/vault_models.dart';
 
+class BackendInfo {
+  const BackendInfo({
+    required this.keepassCoreVersion,
+    required this.keepassFfiVersion,
+    required this.libraryPath,
+  });
+
+  final String keepassCoreVersion;
+  final String keepassFfiVersion;
+  final String libraryPath;
+}
+
 abstract class VaultRepository {
   Future<OpenedVault> openLocal({
     required String path,

@@ -4,10 +4,7 @@ import '../../settings/settings.dart';
 import '../../settings/settings_service.dart';
 
 class SettingsDialog extends StatefulWidget {
-  const SettingsDialog({
-    super.key,
-    required this.settingsService,
-  });
+  const SettingsDialog({super.key, required this.settingsService});
 
   final SettingsService settingsService;
 
@@ -50,20 +47,30 @@ class _SettingsDialogState extends State<SettingsDialog> {
                 initialValue: _draft.themeMode,
                 decoration: const InputDecoration(labelText: 'Theme'),
                 items: const [
-                  DropdownMenuItem(value: ThemeMode.system, child: Text('System')),
-                  DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
+                  DropdownMenuItem(
+                    value: ThemeMode.system,
+                    child: Text('System'),
+                  ),
+                  DropdownMenuItem(
+                    value: ThemeMode.light,
+                    child: Text('Light'),
+                  ),
                   DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
                 ],
                 onChanged: (v) {
                   if (v == null) return;
                   setState(() => _draft.themeMode = v);
-                  widget.settingsService.update((s) { s.themeMode = v; });
+                  widget.settingsService.update((s) {
+                    s.themeMode = v;
+                  });
                 },
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
                 initialValue: _draft.defaultSource,
-                decoration: const InputDecoration(labelText: 'Default unlock source'),
+                decoration: const InputDecoration(
+                  labelText: 'Default unlock source',
+                ),
                 items: const [
                   DropdownMenuItem(value: 'local', child: Text('Local file')),
                   DropdownMenuItem(value: 'webdav', child: Text('WebDAV')),
@@ -98,8 +105,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
               const SizedBox(height: 12),
               DropdownButtonFormField<int>(
                 initialValue: _draft.autoLockMinutes,
-                decoration:
-                    const InputDecoration(labelText: 'Auto-lock after inactivity'),
+                decoration: const InputDecoration(
+                  labelText: 'Auto-lock after inactivity',
+                ),
                 items: const [
                   DropdownMenuItem(value: 1, child: Text('1 minute')),
                   DropdownMenuItem(value: 5, child: Text('5 minutes')),
@@ -116,8 +124,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
               const SizedBox(height: 14),
               DropdownButtonFormField<int>(
                 initialValue: _draft.clipboardClearSeconds,
-                decoration:
-                    const InputDecoration(labelText: 'Clear clipboard after'),
+                decoration: const InputDecoration(
+                  labelText: 'Clear clipboard after',
+                ),
                 items: const [
                   DropdownMenuItem(value: 15, child: Text('15 seconds')),
                   DropdownMenuItem(value: 30, child: Text('30 seconds')),
@@ -133,7 +142,6 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   );
                 },
               ),
-
             ],
           ),
         ),
@@ -157,13 +165,15 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 18,
-            color: Theme.of(context).colorScheme.primary),
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
-        Text(title, style: Theme.of(context).textTheme.titleMedium
-            ?.copyWith(fontWeight: FontWeight.w700)),
+        Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
       ],
     );
   }
 }
-

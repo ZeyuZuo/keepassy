@@ -440,10 +440,16 @@ class _CreateVaultDialogState extends State<_CreateVaultDialog> {
 enum _VaultSource { local, webDav }
 
 class UnlockPage extends StatefulWidget {
-  const UnlockPage({super.key, required this.repository, this.settingsService});
+  const UnlockPage({
+    super.key,
+    required this.repository,
+    this.settingsService,
+    this.backendInfo,
+  });
 
   final VaultRepository repository;
   final SettingsService? settingsService;
+  final BackendInfo? backendInfo;
 
   @override
   State<UnlockPage> createState() => _UnlockPageState();
@@ -532,6 +538,7 @@ class _UnlockPageState extends State<UnlockPage> {
           masterPassword: result.masterPassword,
           keyfilePath: result.keyfilePath,
           settingsService: svc,
+          backendInfo: widget.backendInfo,
         ),
       ),
     );
@@ -621,6 +628,7 @@ class _UnlockPageState extends State<UnlockPage> {
             masterPassword: _passwordController.text,
             keyfilePath: keyfilePath,
             settingsService: svc,
+            backendInfo: widget.backendInfo,
           ),
         ),
       );
@@ -693,7 +701,7 @@ class _UnlockPageState extends State<UnlockPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const _ProductHeader(),
+                          _ProductHeader(backendInfo: widget.backendInfo),
                           const SizedBox(height: 24),
                           form,
                         ],
@@ -704,7 +712,9 @@ class _UnlockPageState extends State<UnlockPage> {
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Expanded(child: _ProductHeader()),
+                      Expanded(
+                        child: _ProductHeader(backendInfo: widget.backendInfo),
+                      ),
                       const SizedBox(width: 56),
                       SizedBox(
                         width: 440,
@@ -723,7 +733,9 @@ class _UnlockPageState extends State<UnlockPage> {
 }
 
 class _ProductHeader extends StatelessWidget {
-  const _ProductHeader();
+  const _ProductHeader({this.backendInfo});
+
+  final BackendInfo? backendInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -749,6 +761,15 @@ class _ProductHeader extends StatelessWidget {
             color: colorScheme.onSurfaceVariant,
           ),
         ),
+        if (backendInfo != null) ...[
+          const SizedBox(height: 18),
+          Text(
+            'Backend ${backendInfo!.keepassFfiVersion} · Core ${backendInfo!.keepassCoreVersion}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ],
     );
   }

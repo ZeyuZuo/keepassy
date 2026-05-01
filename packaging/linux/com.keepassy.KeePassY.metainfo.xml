@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.keepassy.KeePassY</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>KeePassY</name>
+  <summary>KeePass desktop password manager</summary>
+  <description>
+    <p>KeePassY opens, edits, and saves KeePass KDBX vaults with local and WebDAV workflows.</p>
+  </description>
+  <launchable type="desktop-id">com.keepassy.KeePassY.desktop</launchable>
+  <provides>
+    <binary>keepassy_flutter</binary>
+  </provides>
+</component>

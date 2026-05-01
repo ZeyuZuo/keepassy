@@ -20,14 +20,14 @@ class Settings {
   int clipboardClearSeconds;
 
   Map<String, dynamic> toJson() => {
-        'themeMode': themeMode.index,
-        'defaultSource': defaultSource,
-        'lastLocalPath': lastLocalPath,
-        'lastWebDavUrl': lastWebDavUrl,
-        'rememberPaths': rememberPaths,
-        'autoLockMinutes': autoLockMinutes,
-        'clipboardClearSeconds': clipboardClearSeconds,
-      };
+    'themeMode': themeMode.index,
+    'defaultSource': defaultSource,
+    'lastLocalPath': lastLocalPath,
+    'lastWebDavUrl': lastWebDavUrl,
+    'rememberPaths': rememberPaths,
+    'autoLockMinutes': autoLockMinutes,
+    'clipboardClearSeconds': clipboardClearSeconds,
+  };
 
   factory Settings.fromJson(Map<String, dynamic> json) {
     return Settings(

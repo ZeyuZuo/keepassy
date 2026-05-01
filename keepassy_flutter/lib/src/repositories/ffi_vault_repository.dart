@@ -131,44 +131,83 @@ typedef _JsonWithIdAndIntDart =
 typedef _IsDirtyNative = _KeepassYFfiResult Function(Pointer<Void> session);
 typedef _IsDirtyDart = _KeepassYFfiResult Function(Pointer<Void> session);
 
-DynamicLibrary _loadLibrary() {
+typedef _NoArgNative = _KeepassYFfiResult Function();
+typedef _NoArgDart = _KeepassYFfiResult Function();
+
+class _LoadedLibrary {
+  const _LoadedLibrary(this.library, this.path);
+
+  final DynamicLibrary library;
+  final String path;
+}
+
+_LoadedLibrary _loadLibraryWithPath() {
   final envLib = Platform.environment['KEEPASSY_FFI_LIB'];
   if (envLib != null && envLib.isNotEmpty) {
-    return DynamicLibrary.open(envLib);
+    return _LoadedLibrary(DynamicLibrary.open(envLib), envLib);
   }
 
-  const libNames = [
-    'libkeepass_ffi.so',
-    'libkeepass_ffi.dylib',
-    'keepass_ffi.dll',
+  final libName = _platformLibraryName();
+  final searched = <String>[];
+
+  final executableDir = File(Platform.resolvedExecutable).parent.path;
+  final directCandidates = [
+    '$executableDir/lib/$libName',
+    '$executableDir/$libName',
+    '${Directory.current.path}/lib/$libName',
+    '${Directory.current.path}/$libName',
   ];
 
-  for (final name in libNames) {
-    try {
-      return DynamicLibrary.open(name);
-    } catch (_) {}
+  for (final candidate in directCandidates) {
+    searched.add(candidate);
+    if (File(candidate).existsSync()) {
+      return _LoadedLibrary(DynamicLibrary.open(candidate), candidate);
+    }
+  }
+
+  try {
+    return _LoadedLibrary(DynamicLibrary.open(libName), libName);
+  } catch (_) {
+    searched.add(libName);
   }
 
   final cwd = Directory.current.path;
   for (final dir in [cwd, '$cwd/..']) {
-    for (final name in libNames) {
-      final candidate = '$dir/keepass-rs/target/debug/$name';
+    for (final profile in ['release', 'debug']) {
+      final candidate = '$dir/keepass-rs/target/$profile/$libName';
+      searched.add(candidate);
       if (File(candidate).existsSync()) {
-        return DynamicLibrary.open(candidate);
+        return _LoadedLibrary(DynamicLibrary.open(candidate), candidate);
       }
     }
   }
 
   throw VaultRepositoryException(
     'Cannot load keepass_ffi shared library. '
-    'Build it first: cd keepass-rs && cargo build -p keepass_ffi\n'
-    'Or set KEEPASSY_FFI_LIB to the full .so path.',
+    'Build it first: cd keepass-rs && cargo build -p keepass_ffi --release\n'
+    'Or set KEEPASSY_FFI_LIB to the full shared-library path.\n'
+    'Searched: ${searched.join(', ')}',
   );
+}
+
+String _platformLibraryName() {
+  if (Platform.isMacOS) return 'libkeepass_ffi.dylib';
+  if (Platform.isWindows) return 'keepass_ffi.dll';
+  return 'libkeepass_ffi.so';
 }
 
 class FfiVaultRepository implements VaultRepository {
   FfiVaultRepository({DynamicLibrary? library})
-    : _lib = library ?? _loadLibrary() {
+    : this._(
+        library == null
+            ? _loadLibraryWithPath()
+            : _LoadedLibrary(library, 'injected'),
+      );
+
+  FfiVaultRepository._(this._loadedLibrary) : _lib = _loadedLibrary.library {
+    _backendVersionJson = _lib.lookupFunction<_NoArgNative, _NoArgDart>(
+      'keepassy_backend_version_json',
+    );
     _openLocal = _lib.lookupFunction<_OpenLocalNative, _OpenLocalDart>(
       'keepassy_open_local',
     );
@@ -270,9 +309,11 @@ class FfiVaultRepository implements VaultRepository {
         );
   }
 
+  final _LoadedLibrary _loadedLibrary;
   final DynamicLibrary _lib;
   Pointer<Void>? _session;
 
+  late final _NoArgDart _backendVersionJson;
   late final _OpenLocalDart _openLocal;
   late final _CreateLocalDart _createLocal;
   late final _OpenWebDavDart _openWebDav;
@@ -302,6 +343,15 @@ class FfiVaultRepository implements VaultRepository {
   late final _JsonWithIdDart _deleteGroupJson;
   late final _JsonWithIdDart _restoreGroupJson;
   late final _JsonWithIdDart _permanentlyDeleteGroupJson;
+
+  BackendInfo backendInfo() {
+    final json = _readJsonObject(_backendVersionJson());
+    return BackendInfo(
+      keepassCoreVersion: json['keepass_core'] as String? ?? 'unknown',
+      keepassFfiVersion: json['keepass_ffi'] as String? ?? 'unknown',
+      libraryPath: _loadedLibrary.path,
+    );
+  }
 
   @override
   Future<OpenedVault> openLocal({

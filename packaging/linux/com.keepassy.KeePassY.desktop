@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=KeePassY
+Comment=KeePass desktop password manager
+Exec=keepassy_flutter
+Icon=com.keepassy.KeePassY
+Terminal=false
+Categories=Utility;Security;
+Keywords=password;keepass;kdbx;vault;

@@ -7,7 +7,7 @@ project(runner LANGUAGES CXX)
 set(BINARY_NAME "keepassy_flutter")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.example.keepassy_flutter")
+set(APPLICATION_ID "com.keepassy.KeePassY")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -105,6 +105,19 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endforeach(bundled_library)
+
+set(KEEPASSY_FFI_LIBRARY
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../keepass-rs/target/release/libkeepass_ffi.so"
+  CACHE FILEPATH "Path to the Rust keepass_ffi shared library")
+if(EXISTS "${KEEPASSY_FFI_LIBRARY}")
+  install(FILES "${KEEPASSY_FFI_LIBRARY}"
+    DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+else()
+  message(WARNING
+    "keepass_ffi release library not found at ${KEEPASSY_FFI_LIBRARY}. "
+    "Run: cd ../keepass-rs && cargo build -p keepass_ffi --release")
+endif()
 
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
