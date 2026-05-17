@@ -108,8 +108,14 @@ class _KeepassYAppState extends State<KeepassYApp> {
       title: 'KeePassY',
       debugShowCheckedModeBanner: false,
       themeMode: settings.themeMode,
-      theme: buildKeepassYTheme(brightness: Brightness.light),
-      darkTheme: buildKeepassYTheme(brightness: Brightness.dark),
+      theme: buildKeepassYTheme(
+        brightness: Brightness.light,
+        accentId: settings.themeAccent,
+      ),
+      darkTheme: buildKeepassYTheme(
+        brightness: Brightness.dark,
+        accentId: settings.themeAccent,
+      ),
       home: _startupError != null
           ? _StartupFailurePage(message: _startupError!)
           : Stack(

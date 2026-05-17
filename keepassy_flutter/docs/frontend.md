@@ -5,7 +5,10 @@ See `docs/roadmap.md` for the frontend implementation roadmap and
 
 ## Product Direction
 
-Visual thesis: a quiet desktop vault workbench with warm neutral surfaces, precise spacing, and one green security accent.
+Visual thesis: a quiet desktop vault workbench with warm neutral surfaces, precise spacing, and a user-selectable Material 3 accent color.
+
+Current Material 3 redesign reference:
+`docs/assets/material3-redesign-reference.png`.
 
 Content plan:
 
@@ -45,7 +48,8 @@ Interaction thesis:
 - Keep widgets small enough that state ownership is obvious.
 - Use immutable model classes and explicit JSON factories.
 - Do not add a state-management package until state crosses multiple feature owners.
-- Do not store master passwords in app-wide state. Keep credentials scoped to the unlock/save action that needs them.
+- Do not store master passwords in app-wide state. The native session owns the
+  active save credentials after unlock.
 - Prefer focused widget tests for route starts, repository behavior, and sensitive-value visibility.
 
 ## Next Integration Step

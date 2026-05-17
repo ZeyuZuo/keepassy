@@ -6,10 +6,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../app/theme.dart';
 import '../../models/vault_models.dart';
 import '../../repositories/vault_repository.dart';
 import '../../settings/settings_service.dart';
 import '../../widgets/field_line.dart';
+import '../../widgets/pane_surface.dart';
 import '../../widgets/status_chip.dart';
 import '../settings/settings_dialog.dart';
 import '../unlock/unlock_page.dart';
@@ -48,7 +50,6 @@ class VaultPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.initialVault,
-    required this.masterPassword,
     this.keyfilePath,
     this.settingsService,
     this.backendInfo,
@@ -56,7 +57,6 @@ class VaultPage extends StatefulWidget {
 
   final VaultRepository repository;
   final OpenedVault initialVault;
-  final String masterPassword;
   final String? keyfilePath;
   final SettingsService? settingsService;
   final BackendInfo? backendInfo;
@@ -85,13 +85,11 @@ class _VaultPageState extends State<VaultPage> {
   bool _loadingHistory = false;
   bool _searchAllGroups = false;
   int _sortMode = 0; // 0=title, 1=username, 2=modified
-  Timer? _autoLockTimer;
   Timer? _inactivityTimer;
   Timer? _clipboardTimer;
   final Set<String> _selectedEntryIds = {};
   final Set<String> _visibleCustomFields = {};
   late int _autoLockMinutes;
-  late String _saveMasterPassword;
   String? _saveKeyfilePath;
 
   // Edit form controllers
@@ -106,7 +104,6 @@ class _VaultPageState extends State<VaultPage> {
     super.initState();
     final svc = widget.settingsService;
     _autoLockMinutes = svc != null ? svc.settings.autoLockMinutes : 5;
-    _saveMasterPassword = widget.masterPassword;
     _saveKeyfilePath = widget.keyfilePath;
     _groupTree = widget.initialVault.groupTree;
     _selectedGroup = _groupTree;
@@ -119,22 +116,28 @@ class _VaultPageState extends State<VaultPage> {
   void _resetInactivityTimer() {
     _inactivityTimer?.cancel();
     if (_autoLockMinutes > 0) {
-      _inactivityTimer = Timer(Duration(minutes: _autoLockMinutes), _autoLock);
+      _inactivityTimer = Timer(Duration(minutes: _autoLockMinutes), () {
+        _autoLock();
+      });
     }
   }
 
-  void _autoLock() {
+  Future<void> _autoLock() async {
     if (!mounted) return;
     if (_dirty) {
       // If dirty, just reset the timer rather than auto-lock losing changes.
       _resetInactivityTimer();
       return;
     }
-    widget.repository.close();
+    await widget.repository.close();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (_) => UnlockPage(repository: widget.repository),
+        builder: (_) => UnlockPage(
+          repository: widget.repository,
+          settingsService: widget.settingsService,
+          backendInfo: widget.backendInfo,
+        ),
       ),
     );
   }
@@ -160,7 +163,6 @@ class _VaultPageState extends State<VaultPage> {
 
   @override
   void dispose() {
-    _autoLockTimer?.cancel();
     _inactivityTimer?.cancel();
     _clipboardTimer?.cancel();
     _editTitleController.dispose();
@@ -507,10 +509,7 @@ class _VaultPageState extends State<VaultPage> {
     });
 
     try {
-      await widget.repository.save(
-        masterPassword: _saveMasterPassword,
-        keyfilePath: _saveKeyfilePath,
-      );
+      await widget.repository.save();
       if (!mounted) return;
       setState(() {
         _dirty = false;
@@ -1062,7 +1061,11 @@ class _VaultPageState extends State<VaultPage> {
     if (!mounted) return;
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (_) => UnlockPage(repository: widget.repository),
+        builder: (_) => UnlockPage(
+          repository: widget.repository,
+          settingsService: widget.settingsService,
+          backendInfo: widget.backendInfo,
+        ),
       ),
     );
   }
@@ -1072,7 +1075,11 @@ class _VaultPageState extends State<VaultPage> {
     if (!mounted) return;
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (_) => UnlockPage(repository: widget.repository),
+        builder: (_) => UnlockPage(
+          repository: widget.repository,
+          settingsService: widget.settingsService,
+          backendInfo: widget.backendInfo,
+        ),
       ),
     );
   }
@@ -1411,7 +1418,6 @@ class _VaultPageState extends State<VaultPage> {
         keyfilePath: _saveKeyfilePath,
       );
       if (!mounted) return;
-      _saveMasterPassword = newPw;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Password changed')));
@@ -1878,233 +1884,259 @@ class _VaultPageState extends State<VaultPage> {
               const SizedBox(width: 8),
             ],
           ),
-          body: LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 920;
-              if (compact) {
-                return Column(
+          body: Padding(
+            padding: const EdgeInsets.all(16),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 920;
+                if (compact) {
+                  return Column(
+                    children: [
+                      SizedBox(
+                        height: 168,
+                        child: PaneSurface(
+                          child: _GroupRail(
+                            root: _groupTree,
+                            selectedGroup: _selectedGroup,
+                            horizontal: true,
+                            onSelected: _selectGroup,
+                            onCreateGroup: _createGroupDialog,
+                            onRenameGroup: _renameGroupDialog,
+                            onDeleteGroup: _deleteGroupDialog,
+                            onRestoreGroup: _restoreGroupDialog,
+                            onPermanentDeleteGroup:
+                                _permanentlyDeleteGroupDialog,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: PaneSurface(
+                          child: _EntryList(
+                            group: _selectedGroup,
+                            entries: entries,
+                            selectedEntry: _selectedEntry,
+                            query: _query,
+                            onQueryChanged: (value) =>
+                                setState(() => _query = value),
+                            onSelected: _selectEntry,
+                            searchAllGroups: _searchAllGroups,
+                            onSearchAllGroupsChanged: (v) =>
+                                setState(() => _searchAllGroups = v),
+                            selectedEntryIds: _selectedEntryIds,
+                            onToggleSelect: (id) => setState(
+                              () => _selectedEntryIds.contains(id)
+                                  ? _selectedEntryIds.remove(id)
+                                  : _selectedEntryIds.add(id),
+                            ),
+                            sortMode: _sortMode,
+                            onSortModeChanged: (v) =>
+                                setState(() => _sortMode = v),
+                            onCreateEntry: _isGroupInRecycleBin(_selectedGroup)
+                                ? null
+                                : _showCreateDialog,
+                            onEmptyRecycleBin:
+                                _selectedGroup.isRecycleBin &&
+                                    _selectedGroup.totalEntryCount +
+                                            _selectedGroup.groups.length >
+                                        0
+                                ? _emptyRecycleBin
+                                : null,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 340,
+                        child: PaneSurface(
+                          child: _DetailPane(
+                            detail: _detail,
+                            loading: _loadingDetail,
+                            passwordVisible: _passwordVisible,
+                            editing: _editing,
+                            titleCtrl: _editTitleController,
+                            usernameCtrl: _editUsernameController,
+                            passwordCtrl: _editPasswordController,
+                            urlCtrl: _editUrlController,
+                            notesCtrl: _editNotesController,
+                            onPasswordVisibilityChanged: () {
+                              setState(
+                                () => _passwordVisible = !_passwordVisible,
+                              );
+                            },
+                            onEdit: _startEdit,
+                            onSaveEdit: _saveEdit,
+                            onCancelEdit: _cancelEdit,
+                            onDelete: _deleteEntry,
+                            onRestore: _restoreEntry,
+                            onPermanentDelete: _permanentlyDeleteEntry,
+                            inRecycleBin: _isGroupInRecycleBin(_selectedGroup),
+                            onGeneratePassword: _showPasswordGenerator,
+                            onDownloadAttachment: _downloadAttachment,
+                            onAddAttachment: _addAttachment,
+                            onRemoveAttachment: _removeAttachment,
+                            onAddCustomField: _addCustomField,
+                            onRemoveCustomField: _removeCustomField,
+                            onToggleCustomFieldProtect:
+                                _toggleCustomFieldProtect,
+                            onToggleHistory: _loadHistory,
+                            onViewHistoryDetail: _viewHistoryDetail,
+                            onMoveEntry: _moveEntryDialog,
+                            onDuplicateEntry: _duplicateEntry,
+                            editExpires: _editExpires,
+                            onEditExpiresChanged: (v) =>
+                                setState(() => _editExpires = v),
+                            editExpiryDateCtrl: _editExpiryDateController,
+                            showHistory: _showHistory,
+                            history: _history,
+                            loadingHistory: _loadingHistory,
+                            selectedEntry: _selectedEntry,
+                            visibleCustomFields: _visibleCustomFields,
+                            clipboardClearSeconds:
+                                widget
+                                    .settingsService
+                                    ?.settings
+                                    .clipboardClearSeconds ??
+                                30,
+                            onCopyToClipboard: _onCopyToClipboard,
+                            onToggleCustomFieldVisibility: (key) {
+                              setState(() {
+                                if (_visibleCustomFields.contains(key)) {
+                                  _visibleCustomFields.remove(key);
+                                } else {
+                                  _visibleCustomFields.add(key);
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                return Row(
                   children: [
                     SizedBox(
-                      height: 168,
-                      child: _GroupRail(
-                        root: _groupTree,
-                        selectedGroup: _selectedGroup,
-                        horizontal: true,
-                        onSelected: _selectGroup,
-                        onCreateGroup: _createGroupDialog,
-                        onRenameGroup: _renameGroupDialog,
-                        onDeleteGroup: _deleteGroupDialog,
-                        onRestoreGroup: _restoreGroupDialog,
-                        onPermanentDeleteGroup: _permanentlyDeleteGroupDialog,
-                      ),
-                    ),
-                    const Divider(),
-                    Expanded(
-                      child: _EntryList(
-                        group: _selectedGroup,
-                        entries: entries,
-                        selectedEntry: _selectedEntry,
-                        query: _query,
-                        onQueryChanged: (value) =>
-                            setState(() => _query = value),
-                        onSelected: _selectEntry,
-                        searchAllGroups: _searchAllGroups,
-                        onSearchAllGroupsChanged: (v) =>
-                            setState(() => _searchAllGroups = v),
-                        selectedEntryIds: _selectedEntryIds,
-                        onToggleSelect: (id) => setState(
-                          () => _selectedEntryIds.contains(id)
-                              ? _selectedEntryIds.remove(id)
-                              : _selectedEntryIds.add(id),
+                      width: 280,
+                      child: PaneSurface(
+                        child: _GroupRail(
+                          root: _groupTree,
+                          selectedGroup: _selectedGroup,
+                          onSelected: _selectGroup,
+                          onCreateGroup: _createGroupDialog,
+                          onRenameGroup: _renameGroupDialog,
+                          onDeleteGroup: _deleteGroupDialog,
+                          onRestoreGroup: _restoreGroupDialog,
+                          onPermanentDeleteGroup: _permanentlyDeleteGroupDialog,
                         ),
-                        sortMode: _sortMode,
-                        onSortModeChanged: (v) => setState(() => _sortMode = v),
-                        onCreateEntry: _isGroupInRecycleBin(_selectedGroup)
-                            ? null
-                            : _showCreateDialog,
-                        onEmptyRecycleBin:
-                            _selectedGroup.isRecycleBin &&
-                                _selectedGroup.totalEntryCount +
-                                        _selectedGroup.groups.length >
-                                    0
-                            ? _emptyRecycleBin
-                            : null,
                       ),
                     ),
-                    const Divider(),
+                    const SizedBox(width: 16),
                     SizedBox(
-                      height: 340,
-                      child: _DetailPane(
-                        detail: _detail,
-                        loading: _loadingDetail,
-                        passwordVisible: _passwordVisible,
-                        editing: _editing,
-                        titleCtrl: _editTitleController,
-                        usernameCtrl: _editUsernameController,
-                        passwordCtrl: _editPasswordController,
-                        urlCtrl: _editUrlController,
-                        notesCtrl: _editNotesController,
-                        onPasswordVisibilityChanged: () {
-                          setState(() => _passwordVisible = !_passwordVisible);
-                        },
-                        onEdit: _startEdit,
-                        onSaveEdit: _saveEdit,
-                        onCancelEdit: _cancelEdit,
-                        onDelete: _deleteEntry,
-                        onRestore: _restoreEntry,
-                        onPermanentDelete: _permanentlyDeleteEntry,
-                        inRecycleBin: _isGroupInRecycleBin(_selectedGroup),
-                        onGeneratePassword: _showPasswordGenerator,
-                        onDownloadAttachment: _downloadAttachment,
-                        onAddAttachment: _addAttachment,
-                        onRemoveAttachment: _removeAttachment,
-                        onAddCustomField: _addCustomField,
-                        onRemoveCustomField: _removeCustomField,
-                        onToggleCustomFieldProtect: _toggleCustomFieldProtect,
-                        onToggleHistory: _loadHistory,
-                        onViewHistoryDetail: _viewHistoryDetail,
-                        onMoveEntry: _moveEntryDialog,
-                        onDuplicateEntry: _duplicateEntry,
-                        editExpires: _editExpires,
-                        onEditExpiresChanged: (v) =>
-                            setState(() => _editExpires = v),
-                        editExpiryDateCtrl: _editExpiryDateController,
-                        showHistory: _showHistory,
-                        history: _history,
-                        loadingHistory: _loadingHistory,
-                        selectedEntry: _selectedEntry,
-                        visibleCustomFields: _visibleCustomFields,
-                        clipboardClearSeconds:
-                            widget
-                                .settingsService
-                                ?.settings
-                                .clipboardClearSeconds ??
-                            30,
-                        onCopyToClipboard: _onCopyToClipboard,
-                        onToggleCustomFieldVisibility: (key) {
-                          setState(() {
-                            if (_visibleCustomFields.contains(key)) {
-                              _visibleCustomFields.remove(key);
-                            } else {
-                              _visibleCustomFields.add(key);
-                            }
-                          });
-                        },
+                      width: 400,
+                      child: PaneSurface(
+                        child: _EntryList(
+                          group: _selectedGroup,
+                          entries: entries,
+                          selectedEntry: _selectedEntry,
+                          query: _query,
+                          onQueryChanged: (value) =>
+                              setState(() => _query = value),
+                          onSelected: _selectEntry,
+                          searchAllGroups: _searchAllGroups,
+                          onSearchAllGroupsChanged: (v) =>
+                              setState(() => _searchAllGroups = v),
+                          selectedEntryIds: _selectedEntryIds,
+                          onToggleSelect: (id) => setState(
+                            () => _selectedEntryIds.contains(id)
+                                ? _selectedEntryIds.remove(id)
+                                : _selectedEntryIds.add(id),
+                          ),
+                          sortMode: _sortMode,
+                          onSortModeChanged: (v) =>
+                              setState(() => _sortMode = v),
+                          onCreateEntry: _isGroupInRecycleBin(_selectedGroup)
+                              ? null
+                              : _showCreateDialog,
+                          onEmptyRecycleBin:
+                              _selectedGroup.isRecycleBin &&
+                                  _selectedGroup.totalEntryCount +
+                                          _selectedGroup.groups.length >
+                                      0
+                              ? _emptyRecycleBin
+                              : null,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: PaneSurface(
+                        child: _DetailPane(
+                          detail: _detail,
+                          loading: _loadingDetail,
+                          passwordVisible: _passwordVisible,
+                          editing: _editing,
+                          titleCtrl: _editTitleController,
+                          usernameCtrl: _editUsernameController,
+                          passwordCtrl: _editPasswordController,
+                          urlCtrl: _editUrlController,
+                          notesCtrl: _editNotesController,
+                          onPasswordVisibilityChanged: () {
+                            setState(
+                              () => _passwordVisible = !_passwordVisible,
+                            );
+                          },
+                          onEdit: _startEdit,
+                          onSaveEdit: _saveEdit,
+                          onCancelEdit: _cancelEdit,
+                          onDelete: _deleteEntry,
+                          onRestore: _restoreEntry,
+                          onPermanentDelete: _permanentlyDeleteEntry,
+                          inRecycleBin: _isGroupInRecycleBin(_selectedGroup),
+                          onGeneratePassword: _showPasswordGenerator,
+                          onDownloadAttachment: _downloadAttachment,
+                          onAddAttachment: _addAttachment,
+                          onRemoveAttachment: _removeAttachment,
+                          onAddCustomField: _addCustomField,
+                          onRemoveCustomField: _removeCustomField,
+                          onToggleCustomFieldProtect: _toggleCustomFieldProtect,
+                          onToggleHistory: _loadHistory,
+                          onViewHistoryDetail: _viewHistoryDetail,
+                          onMoveEntry: _moveEntryDialog,
+                          onDuplicateEntry: _duplicateEntry,
+                          editExpires: _editExpires,
+                          onEditExpiresChanged: (v) =>
+                              setState(() => _editExpires = v),
+                          editExpiryDateCtrl: _editExpiryDateController,
+                          showHistory: _showHistory,
+                          history: _history,
+                          loadingHistory: _loadingHistory,
+                          selectedEntry: _selectedEntry,
+                          clipboardClearSeconds:
+                              widget
+                                  .settingsService
+                                  ?.settings
+                                  .clipboardClearSeconds ??
+                              30,
+                          onCopyToClipboard: _onCopyToClipboard,
+                          visibleCustomFields: _visibleCustomFields,
+                          onToggleCustomFieldVisibility: (key) {
+                            setState(() {
+                              if (_visibleCustomFields.contains(key)) {
+                                _visibleCustomFields.remove(key);
+                              } else {
+                                _visibleCustomFields.add(key);
+                              }
+                            });
+                          },
+                        ),
                       ),
                     ),
                   ],
                 );
-              }
-
-              return Row(
-                children: [
-                  SizedBox(
-                    width: 264,
-                    child: _GroupRail(
-                      root: _groupTree,
-                      selectedGroup: _selectedGroup,
-                      onSelected: _selectGroup,
-                      onCreateGroup: _createGroupDialog,
-                      onRenameGroup: _renameGroupDialog,
-                      onDeleteGroup: _deleteGroupDialog,
-                      onRestoreGroup: _restoreGroupDialog,
-                      onPermanentDeleteGroup: _permanentlyDeleteGroupDialog,
-                    ),
-                  ),
-                  const VerticalDivider(width: 1),
-                  SizedBox(
-                    width: 380,
-                    child: _EntryList(
-                      group: _selectedGroup,
-                      entries: entries,
-                      selectedEntry: _selectedEntry,
-                      query: _query,
-                      onQueryChanged: (value) => setState(() => _query = value),
-                      onSelected: _selectEntry,
-                      searchAllGroups: _searchAllGroups,
-                      onSearchAllGroupsChanged: (v) =>
-                          setState(() => _searchAllGroups = v),
-                      selectedEntryIds: _selectedEntryIds,
-                      onToggleSelect: (id) => setState(
-                        () => _selectedEntryIds.contains(id)
-                            ? _selectedEntryIds.remove(id)
-                            : _selectedEntryIds.add(id),
-                      ),
-                      sortMode: _sortMode,
-                      onSortModeChanged: (v) => setState(() => _sortMode = v),
-                      onCreateEntry: _isGroupInRecycleBin(_selectedGroup)
-                          ? null
-                          : _showCreateDialog,
-                      onEmptyRecycleBin:
-                          _selectedGroup.isRecycleBin &&
-                              _selectedGroup.totalEntryCount +
-                                      _selectedGroup.groups.length >
-                                  0
-                          ? _emptyRecycleBin
-                          : null,
-                    ),
-                  ),
-                  const VerticalDivider(width: 1),
-                  Expanded(
-                    child: _DetailPane(
-                      detail: _detail,
-                      loading: _loadingDetail,
-                      passwordVisible: _passwordVisible,
-                      editing: _editing,
-                      titleCtrl: _editTitleController,
-                      usernameCtrl: _editUsernameController,
-                      passwordCtrl: _editPasswordController,
-                      urlCtrl: _editUrlController,
-                      notesCtrl: _editNotesController,
-                      onPasswordVisibilityChanged: () {
-                        setState(() => _passwordVisible = !_passwordVisible);
-                      },
-                      onEdit: _startEdit,
-                      onSaveEdit: _saveEdit,
-                      onCancelEdit: _cancelEdit,
-                      onDelete: _deleteEntry,
-                      onRestore: _restoreEntry,
-                      onPermanentDelete: _permanentlyDeleteEntry,
-                      inRecycleBin: _isGroupInRecycleBin(_selectedGroup),
-                      onGeneratePassword: _showPasswordGenerator,
-                      onDownloadAttachment: _downloadAttachment,
-                      onAddAttachment: _addAttachment,
-                      onRemoveAttachment: _removeAttachment,
-                      onAddCustomField: _addCustomField,
-                      onRemoveCustomField: _removeCustomField,
-                      onToggleCustomFieldProtect: _toggleCustomFieldProtect,
-                      onToggleHistory: _loadHistory,
-                      onViewHistoryDetail: _viewHistoryDetail,
-                      onMoveEntry: _moveEntryDialog,
-                      onDuplicateEntry: _duplicateEntry,
-                      editExpires: _editExpires,
-                      onEditExpiresChanged: (v) =>
-                          setState(() => _editExpires = v),
-                      editExpiryDateCtrl: _editExpiryDateController,
-                      showHistory: _showHistory,
-                      history: _history,
-                      loadingHistory: _loadingHistory,
-                      selectedEntry: _selectedEntry,
-                      clipboardClearSeconds:
-                          widget.settingsService?.settings
-                                  .clipboardClearSeconds ??
-                              30,
-                      onCopyToClipboard: _onCopyToClipboard,
-                      visibleCustomFields: _visibleCustomFields,
-                      onToggleCustomFieldVisibility: (key) {
-                        setState(() {
-                          if (_visibleCustomFields.contains(key)) {
-                            _visibleCustomFields.remove(key);
-                          } else {
-                            _visibleCustomFields.add(key);
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
+              },
+            ),
           ),
         ),
       ),
@@ -2566,101 +2598,113 @@ class _GroupButton extends StatelessWidget {
         ? '${group.entryCount} $entryLabel in Recycle Bin'
         : '${group.entryCount} $entryLabel';
 
-    return Material(
-      color: backgroundColor,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => onSelected(group),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(horizontalInset, 10, 12, 10),
-          child: Row(
-            children: [
-              SizedBox.square(
-                dimension: 24,
-                child: canToggle
-                    ? IconButton(
-                        tooltip: collapsed ? 'Expand group' : 'Collapse group',
-                        padding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: onToggleCollapsed,
-                        icon: Icon(
-                          collapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_down,
-                          size: 20,
-                          color: iconColor,
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                group.isRecycleBin
-                    ? Icons.delete_outline
-                    : isRecycledGroup
-                    ? Icons.folder_delete_outlined
-                    : group.groups.isEmpty
-                    ? Icons.folder_outlined
-                    : Icons.folder_copy_outlined,
-                color: iconColor,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      group.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: titleColor,
-                        fontWeight: isRecycleRoot
-                            ? FontWeight.w700
-                            : FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: isRecycleRoot
-                            ? (selected
-                                  ? colorScheme.onErrorContainer
-                                  : recycleAccent)
-                            : isRecycledGroup
-                            ? colorScheme.error
-                            : colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+    return AnimatedContainer(
+      duration: KeepassYMotion.fast,
+      curve: KeepassYMotion.curve,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(KeepassYRadius.control),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(KeepassYRadius.control),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(KeepassYRadius.control),
+          onTap: () => onSelected(group),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(horizontalInset, 12, 12, 12),
+            child: Row(
+              children: [
+                SizedBox.square(
+                  dimension: 24,
+                  child: canToggle
+                      ? IconButton(
+                          tooltip: collapsed
+                              ? 'Expand group'
+                              : 'Collapse group',
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: onToggleCollapsed,
+                          icon: Icon(
+                            collapsed
+                                ? Icons.keyboard_arrow_right
+                                : Icons.keyboard_arrow_down,
+                            size: 20,
+                            color: iconColor,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
                 ),
-              ),
-              if (group.id != 'root' &&
-                  !group.isRecycleBin &&
-                  ((inRecycleBin &&
-                          (onRestore != null || onPermanentDelete != null)) ||
-                      (!inRecycleBin && onRename != null && onDelete != null)))
-                GestureDetector(
-                  onTapDown: (details) {
-                    _showGroupContextMenu(
-                      context,
-                      details.globalPosition,
-                      group,
-                      inRecycleBin,
-                      onRename,
-                      onDelete,
-                      onRestore,
-                      onPermanentDelete,
-                    );
-                  },
-                  child: Icon(
-                    Icons.more_vert,
-                    size: 16,
-                    color: colorScheme.onSurfaceVariant,
+                const SizedBox(width: 4),
+                Icon(
+                  group.isRecycleBin
+                      ? Icons.delete_outline
+                      : isRecycledGroup
+                      ? Icons.folder_delete_outlined
+                      : group.groups.isEmpty
+                      ? Icons.folder_outlined
+                      : Icons.folder_copy_outlined,
+                  color: iconColor,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        group.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: titleColor,
+                          fontWeight: isRecycleRoot
+                              ? FontWeight.w700
+                              : FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: isRecycleRoot
+                              ? (selected
+                                    ? colorScheme.onErrorContainer
+                                    : recycleAccent)
+                              : isRecycledGroup
+                              ? colorScheme.error
+                              : colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-            ],
+                if (group.id != 'root' &&
+                    !group.isRecycleBin &&
+                    ((inRecycleBin &&
+                            (onRestore != null || onPermanentDelete != null)) ||
+                        (!inRecycleBin &&
+                            onRename != null &&
+                            onDelete != null)))
+                  GestureDetector(
+                    onTapDown: (details) {
+                      _showGroupContextMenu(
+                        context,
+                        details.globalPosition,
+                        group,
+                        inRecycleBin,
+                        onRename,
+                        onDelete,
+                        onRestore,
+                        onPermanentDelete,
+                      );
+                    },
+                    child: Icon(
+                      Icons.more_vert,
+                      size: 16,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -2781,35 +2825,13 @@ class _EntryList extends StatelessWidget {
                     ),
                   ),
                   if (onSearchAllGroupsChanged != null) ...[
-                    const SizedBox(width: 4),
-                    InkWell(
-                      onTap: () => onSearchAllGroupsChanged!(!searchAllGroups),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                          borderRadius: BorderRadius.circular(6),
-                          color: searchAllGroups
-                              ? Theme.of(
-                                  context,
-                                ).colorScheme.primary.withValues(alpha: 0.1)
-                              : null,
-                        ),
-                        child: Text(
-                          'All',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: searchAllGroups
-                                ? Theme.of(context).colorScheme.primary
-                                : null,
-                          ),
-                        ),
-                      ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      label: const Text('All'),
+                      avatar: const Icon(Icons.all_inbox_outlined, size: 17),
+                      selected: searchAllGroups,
+                      onSelected: (selected) =>
+                          onSearchAllGroupsChanged!(selected),
                     ),
                   ],
                 ],
@@ -2822,26 +2844,30 @@ class _EntryList extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
             child: Row(
               children: [
-                const Text('Sort: ', style: TextStyle(fontSize: 12)),
-                DropdownButton<int>(
-                  value: sortMode,
-                  isDense: true,
-                  underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 0,
-                      child: Text('Title', style: TextStyle(fontSize: 12)),
+                Text(
+                  'Sort',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SegmentedButton<int>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(value: 0, label: Text('Title')),
+                      ButtonSegment(value: 1, label: Text('User')),
+                      ButtonSegment(value: 2, label: Text('Modified')),
+                    ],
+                    selected: {sortMode},
+                    onSelectionChanged: (values) =>
+                        onSortModeChanged!(values.single),
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    DropdownMenuItem(
-                      value: 1,
-                      child: Text('Username', style: TextStyle(fontSize: 12)),
-                    ),
-                    DropdownMenuItem(
-                      value: 2,
-                      child: Text('Modified', style: TextStyle(fontSize: 12)),
-                    ),
-                  ],
-                  onChanged: (v) => onSortModeChanged!(v ?? 0),
+                  ),
                 ),
               ],
             ),
@@ -2892,60 +2918,66 @@ class _EntryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Material(
-      color: selected ? colorScheme.surfaceContainerLow : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => onSelected(entry),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              if (onToggle != null)
-                GestureDetector(
-                  onTap: onToggle,
-                  child: Icon(
-                    isChecked ? Icons.check_box : Icons.check_box_outline_blank,
-                    size: 20,
-                    color: isChecked
-                        ? colorScheme.primary
-                        : colorScheme.onSurfaceVariant,
+    return AnimatedContainer(
+      duration: KeepassYMotion.fast,
+      curve: KeepassYMotion.curve,
+      decoration: BoxDecoration(
+        color: selected
+            ? colorScheme.primaryContainer.withValues(alpha: 0.56)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(KeepassYRadius.control),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(KeepassYRadius.control),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(KeepassYRadius.control),
+          onTap: () => onSelected(entry),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                if (onToggle != null)
+                  Checkbox(
+                    value: isChecked,
+                    onChanged: (_) => onToggle?.call(),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: selected
+                      ? colorScheme.primary
+                      : colorScheme.surfaceContainerLow,
+                  foregroundColor: selected
+                      ? colorScheme.onPrimary
+                      : colorScheme.onSurfaceVariant,
+                  child: Text(
+                    entry.displayTitle.characters.first.toUpperCase(),
                   ),
                 ),
-              if (onToggle != null) const SizedBox(width: 8),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: selected
-                    ? colorScheme.primary
-                    : colorScheme.surfaceContainerLow,
-                foregroundColor: selected
-                    ? colorScheme.onPrimary
-                    : colorScheme.onSurfaceVariant,
-                child: Text(entry.displayTitle.characters.first.toUpperCase()),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      entry.displayTitle,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      entry.username ?? entry.url ?? 'No username',
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        entry.displayTitle,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 3),
+                      Text(
+                        entry.username ?? entry.url ?? 'No username',
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -3038,17 +3070,47 @@ class _DetailPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Widget child;
     if (loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (detail == null) {
-      return const Center(child: Text('Select an entry'));
+      child = const Center(
+        key: ValueKey('detail-loading'),
+        child: CircularProgressIndicator(),
+      );
+    } else if (detail == null) {
+      child = const Center(
+        key: ValueKey('detail-empty'),
+        child: Text('Select an entry'),
+      );
+    } else if (editing) {
+      child = KeyedSubtree(
+        key: ValueKey('detail-edit-${detail!.id}'),
+        child: _buildEditMode(context),
+      );
+    } else {
+      child = KeyedSubtree(
+        key: ValueKey('detail-read-${detail!.id}'),
+        child: _buildReadMode(context),
+      );
     }
 
-    if (editing) {
-      return _buildEditMode(context);
-    }
-    return _buildReadMode(context);
+    return AnimatedSwitcher(
+      duration: KeepassYMotion.medium,
+      switchInCurve: KeepassYMotion.curve,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.02, 0),
+              end: Offset.zero,
+            ).animate(animation),
+            child: child,
+          ),
+        );
+      },
+      child: child,
+    );
   }
 
   Widget _buildReadMode(BuildContext context) {

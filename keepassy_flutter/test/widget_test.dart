@@ -4,6 +4,7 @@ import 'package:keepassy_flutter/src/app/keepassy_app.dart';
 import 'package:keepassy_flutter/src/features/vault/vault_page.dart';
 import 'package:keepassy_flutter/src/models/vault_models.dart';
 import 'package:keepassy_flutter/src/repositories/vault_repository.dart';
+import 'package:keepassy_flutter/src/settings/settings.dart';
 
 void main() {
   test('group entry count only includes direct entries', () {
@@ -41,6 +42,13 @@ void main() {
       () => validateWebDavUrl('https://example.com/vault.kdbx'),
       returnsNormally,
     );
+  });
+
+  test('settings persist selected theme accent', () {
+    final settings = Settings(themeAccent: 'violet');
+    final restored = Settings.fromJson(settings.toJson());
+
+    expect(restored.themeAccent, 'violet');
   });
 
   // --- Header ---
@@ -284,11 +292,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: VaultPage(
-          repository: repo,
-          initialVault: vault,
-          masterPassword: 'password',
-        ),
+        home: VaultPage(repository: repo, initialVault: vault),
       ),
     );
 
@@ -325,7 +329,10 @@ void main() {
     final repo = MockVaultRepository();
     await tester.pumpWidget(KeepassYApp(repository: repo));
 
-    // Path is pre-filled with a default value, master password is empty
+    await tester.enterText(
+      find.widgetWithText(TextField, 'File path'),
+      '/tmp/test.kdbx',
+    );
     await tapUnlock(tester);
 
     expect(
@@ -384,7 +391,10 @@ void main() {
     final repo = MockVaultRepository();
     await tester.pumpWidget(KeepassYApp(repository: repo));
 
-    // Path is pre-filled, master password is empty — tap Unlock
+    await tester.enterText(
+      find.widgetWithText(TextField, 'File path'),
+      '/tmp/test.kdbx',
+    );
     await tapUnlock(tester);
     expect(
       find.text('Master password or keyfile is required.'),

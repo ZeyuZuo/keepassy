@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 class Settings {
   Settings({
     this.themeMode = ThemeMode.system,
+    this.themeAccent = 'green',
     this.defaultSource = 'local',
     this.lastLocalPath,
     this.lastWebDavUrl,
@@ -12,6 +13,7 @@ class Settings {
   });
 
   ThemeMode themeMode;
+  String themeAccent;
   String defaultSource;
   String? lastLocalPath;
   String? lastWebDavUrl;
@@ -21,6 +23,7 @@ class Settings {
 
   Map<String, dynamic> toJson() => {
     'themeMode': themeMode.index,
+    'themeAccent': themeAccent,
     'defaultSource': defaultSource,
     'lastLocalPath': lastLocalPath,
     'lastWebDavUrl': lastWebDavUrl,
@@ -32,6 +35,7 @@ class Settings {
   factory Settings.fromJson(Map<String, dynamic> json) {
     return Settings(
       themeMode: ThemeMode.values[json['themeMode'] as int? ?? 0],
+      themeAccent: json['themeAccent'] as String? ?? 'green',
       defaultSource: json['defaultSource'] as String? ?? 'local',
       lastLocalPath: json['lastLocalPath'] as String?,
       lastWebDavUrl: json['lastWebDavUrl'] as String?,

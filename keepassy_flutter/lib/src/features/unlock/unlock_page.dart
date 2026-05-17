@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../app/theme.dart';
 import '../../models/vault_models.dart';
 import '../../repositories/vault_repository.dart';
 import '../../settings/settings_service.dart';
@@ -41,13 +42,11 @@ class _CreateVaultResult {
   const _CreateVaultResult({
     required this.vault,
     required this.path,
-    required this.masterPassword,
     this.keyfilePath,
   });
 
   final OpenedVault vault;
   final String path;
-  final String masterPassword;
   final String? keyfilePath;
 }
 
@@ -198,12 +197,7 @@ class _CreateVaultDialogState extends State<_CreateVaultDialog> {
         return;
       }
       Navigator.of(context).pop(
-        _CreateVaultResult(
-          vault: vault,
-          path: path,
-          masterPassword: _passwordCtrl.text,
-          keyfilePath: keyfilePath,
-        ),
+        _CreateVaultResult(vault: vault, path: path, keyfilePath: keyfilePath),
       );
     } on Object catch (err) {
       if (!mounted) {
@@ -472,7 +466,7 @@ class _UnlockPageState extends State<UnlockPage> {
       final s = svc.settings;
       if (s.rememberPaths && s.lastLocalPath != null) return s.lastLocalPath!;
     }
-    return '/home/zzy/Desktop/code/KeepassY/keepass-rs/Database.kdbx';
+    return '';
   }
 
   String _initialWebDavUrl() {
@@ -535,7 +529,6 @@ class _UnlockPageState extends State<UnlockPage> {
         builder: (_) => VaultPage(
           repository: widget.repository,
           initialVault: result.vault,
-          masterPassword: result.masterPassword,
           keyfilePath: result.keyfilePath,
           settingsService: svc,
           backendInfo: widget.backendInfo,
@@ -625,7 +618,6 @@ class _UnlockPageState extends State<UnlockPage> {
           builder: (_) => VaultPage(
             repository: widget.repository,
             initialVault: vault,
-            masterPassword: _passwordController.text,
             keyfilePath: keyfilePath,
             settingsService: svc,
             backendInfo: widget.backendInfo,
@@ -745,7 +737,19 @@ class _ProductHeader extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.lock_outline, size: 40, color: colorScheme.primary),
+        Container(
+          width: 72,
+          height: 72,
+          decoration: BoxDecoration(
+            color: colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Icon(
+            Icons.lock_outline,
+            size: 34,
+            color: colorScheme.onPrimaryContainer,
+          ),
+        ),
         const SizedBox(height: 24),
         Text(
           'KeePassY',
@@ -824,14 +828,11 @@ class _UnlockForm extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest,
-        border: Border.all(color: colorScheme.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
-      ),
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -880,75 +881,96 @@ class _UnlockForm extends StatelessWidget {
             const SizedBox(height: 20),
             const _SectionLabel('Source'),
             const SizedBox(height: 10),
-            if (source == _VaultSource.local)
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: pathController,
-                      decoration: const InputDecoration(
-                        labelText: 'File path',
-                        prefixIcon: Icon(Icons.folder_open_outlined),
-                      ),
-                      textInputAction: TextInputAction.next,
+            AnimatedSwitcher(
+              duration: KeepassYMotion.medium,
+              switchInCurve: KeepassYMotion.curve,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SizeTransition(
+                    sizeFactor: animation,
+                    axisAlignment: -1,
+                    child: child,
+                  ),
+                );
+              },
+              child: source == _VaultSource.local
+                  ? Row(
+                      key: const ValueKey('local-source'),
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: pathController,
+                            decoration: const InputDecoration(
+                              labelText: 'File path',
+                              prefixIcon: Icon(Icons.folder_open_outlined),
+                            ),
+                            textInputAction: TextInputAction.next,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'Browse for KDBX file',
+                          onPressed: () async {
+                            final result = await FilePicker.platform.pickFiles(
+                              dialogTitle: 'Open KDBX vault',
+                            );
+                            if (result != null &&
+                                result.files.single.path != null) {
+                              pathController.text = result.files.single.path!;
+                            }
+                          },
+                          icon: const Icon(Icons.folder_open),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      key: const ValueKey('webdav-source'),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextField(
+                          controller: webDavUrlController,
+                          decoration: const InputDecoration(
+                            labelText: 'Server URL',
+                            prefixIcon: Icon(Icons.cloud_outlined),
+                          ),
+                          keyboardType: TextInputType.url,
+                          textInputAction: TextInputAction.next,
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: webDavUsernameController,
+                          decoration: const InputDecoration(
+                            labelText: 'Username',
+                            prefixIcon: Icon(Icons.person_outline),
+                          ),
+                          textInputAction: TextInputAction.next,
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: webDavPasswordController,
+                          obscureText: obscureWebDavPassword,
+                          decoration: InputDecoration(
+                            labelText: 'Server password',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              tooltip: obscureWebDavPassword
+                                  ? 'Show server password'
+                                  : 'Hide server password',
+                              onPressed: onObscureWebDavPasswordChanged,
+                              icon: Icon(
+                                obscureWebDavPassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
+                          ),
+                          textInputAction: TextInputAction.next,
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: 'Browse for KDBX file',
-                    onPressed: () async {
-                      final result = await FilePicker.platform.pickFiles(
-                        dialogTitle: 'Open KDBX vault',
-                      );
-                      if (result != null && result.files.single.path != null) {
-                        pathController.text = result.files.single.path!;
-                      }
-                    },
-                    icon: const Icon(Icons.folder_open),
-                  ),
-                ],
-              )
-            else ...[
-              TextField(
-                controller: webDavUrlController,
-                decoration: const InputDecoration(
-                  labelText: 'Server URL',
-                  prefixIcon: Icon(Icons.cloud_outlined),
-                ),
-                keyboardType: TextInputType.url,
-                textInputAction: TextInputAction.next,
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: webDavUsernameController,
-                decoration: const InputDecoration(
-                  labelText: 'Username',
-                  prefixIcon: Icon(Icons.person_outline),
-                ),
-                textInputAction: TextInputAction.next,
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: webDavPasswordController,
-                obscureText: obscureWebDavPassword,
-                decoration: InputDecoration(
-                  labelText: 'Server password',
-                  prefixIcon: const Icon(Icons.lock_outline),
-                  suffixIcon: IconButton(
-                    tooltip: obscureWebDavPassword
-                        ? 'Show server password'
-                        : 'Hide server password',
-                    onPressed: onObscureWebDavPasswordChanged,
-                    icon: Icon(
-                      obscureWebDavPassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                    ),
-                  ),
-                ),
-                textInputAction: TextInputAction.next,
-              ),
-            ],
+            ),
             const SizedBox(height: 20),
             const Divider(),
             const SizedBox(height: 20),
@@ -981,7 +1003,19 @@ class _UnlockForm extends StatelessWidget {
               onChanged: onUseKeyfileChanged,
             ),
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 160),
+              duration: KeepassYMotion.medium,
+              switchInCurve: KeepassYMotion.curve,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: SizeTransition(
+                    sizeFactor: animation,
+                    axisAlignment: -1,
+                    child: child,
+                  ),
+                );
+              },
               child: useKeyfile
                   ? Padding(
                       padding: const EdgeInsets.only(bottom: 14),
@@ -1018,12 +1052,47 @@ class _UnlockForm extends StatelessWidget {
                     )
                   : const SizedBox.shrink(),
             ),
-            if (error != null) ...[
-              const SizedBox(height: 4),
-              Text(error!, style: TextStyle(color: colorScheme.error)),
-              const SizedBox(height: 8),
-            ] else
-              const SizedBox(height: 8),
+            AnimatedSwitcher(
+              duration: KeepassYMotion.fast,
+              switchInCurve: KeepassYMotion.curve,
+              child: error == null
+                  ? const SizedBox(key: ValueKey('no-error'), height: 8)
+                  : Padding(
+                      key: const ValueKey('error'),
+                      padding: const EdgeInsets.only(top: 4, bottom: 8),
+                      child: Material(
+                        color: colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(
+                          KeepassYRadius.control,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 18,
+                                color: colorScheme.onErrorContainer,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  error!,
+                                  style: TextStyle(
+                                    color: colorScheme.onErrorContainer,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
             FilledButton.icon(
               onPressed: onOpen,
               icon: opening
