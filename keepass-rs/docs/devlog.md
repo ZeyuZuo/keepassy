@@ -190,10 +190,11 @@ the UUID doesn't match any entry.
 #### 3.5 Save Database
 
 - `keepass = { version = "=0.10.1", features = ["save_kdbx4"] }` enabled.
-- `VaultSession::save(master_password)` re-derives the encryption key from the
-  password, serializes the database via `Database::save()`, writes bytes through
-  the `StorageBackend`, and clears the dirty flag.
-- Save is never implicit — caller must provide the master password.
+- `VaultSession::save(master_password)` supports explicit credentials, while
+  `save_with_current_credentials()` uses the credentials captured at unlock.
+- Save serializes the database via `Database::save()`, writes bytes through the
+  `StorageBackend`, and clears the dirty flag.
+- Save is never implicit — the caller must still explicitly request it.
 - KDBX4 writing carries a doc warning about experimental support in the keepass crate.
 
 #### Mutation tests added (7 new)
@@ -509,7 +510,7 @@ All existing mutation wrappers (`create`, `update`, `set_custom_field`,
   - **Create**: dialog with title/username/password/URL/notes fields.
   - **Edit**: inline edit mode in the detail pane.
   - **Delete**: confirmation dialog before removing entry.
-  - **Save**: master-password re-prompt dialog before persisting to backend.
+  - **Save**: explicit save action using the active native session credentials.
   - **Lock**: unsaved-changes prompt before discarding.
 
 #### P2.3 Save and dirty state UX
@@ -517,7 +518,8 @@ All existing mutation wrappers (`create`, `update`, `set_custom_field`,
 - Dirty flag set locally after create/update/delete mutations.
 - Save button states: clean (grey, disabled), dirty (primary colour, enabled),
   saving (spinner), failed (error icon with tooltip).
-- Save re-prompts for master password (not stored in app state).
+- Save uses the active native session credentials instead of storing the master
+  password in Flutter state.
 - Lock prompts to confirm before discarding unsaved changes.
 
 #### P2.4 Clipboard
@@ -749,8 +751,8 @@ workflows.
 
 ### Verification
 
-- `/home/zzy/app/flutter/bin/flutter analyze`
-- `/home/zzy/app/flutter/bin/flutter test`
+- `flutter analyze`
+- `flutter test`
 - `cargo test -p keepass_core -p keepass_ffi`
 - `cargo build -p keepass_ffi`
 
@@ -805,8 +807,8 @@ restore, permanent delete, and empty-bin behavior.
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`
-- `/home/zzy/app/flutter/bin/flutter analyze`
-- `/home/zzy/app/flutter/bin/flutter test`
+- `flutter analyze`
+- `flutter test`
 - `cargo build -p keepass_ffi`
 
 ### Follow-up
@@ -822,10 +824,8 @@ restore, permanent delete, and empty-bin behavior.
 
 ### UX fixes — done
 
-- Save now reuses the master password and keyfile path supplied during
-  unlock/create, so Save no longer opens a password prompt.
-- After a successful password change, the in-memory save credential is updated
-  to the new password.
+- Save uses credentials retained by the native Rust session, so Flutter no
+  longer keeps the master password in page state and Save does not prompt again.
 - The Groups header and create-group button remain visible when Recycle Bin is
   selected. Creating a group while browsing Recycle Bin now creates it under the
   database root instead of inside Recycle Bin.
@@ -856,6 +856,6 @@ restore, permanent delete, and empty-bin behavior.
 
 - `cargo test --workspace`
 - `cargo clippy --workspace --all-targets -- -D warnings`
-- `/home/zzy/app/flutter/bin/flutter analyze`
-- `/home/zzy/app/flutter/bin/flutter test`
+- `flutter analyze`
+- `flutter test`
 - `cargo build -p keepass_ffi`

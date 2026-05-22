@@ -89,19 +89,6 @@ typedef _ChangePasswordDart =
       Pointer<Utf8> keyfilePath,
     );
 
-typedef _SaveNative =
-    _KeepassYFfiResult Function(
-      Pointer<Void> session,
-      Pointer<Utf8> masterPassword,
-      Pointer<Utf8> keyfilePath,
-    );
-typedef _SaveDart =
-    _KeepassYFfiResult Function(
-      Pointer<Void> session,
-      Pointer<Utf8> masterPassword,
-      Pointer<Utf8> keyfilePath,
-    );
-
 typedef _JsonWithTwoIdsNative =
     _KeepassYFfiResult Function(
       Pointer<Void> session,
@@ -141,14 +128,20 @@ class _LoadedLibrary {
   final String path;
 }
 
+const _requiredFfiSymbols = [
+  'keepassy_backend_version_json',
+  'keepassy_save_current',
+];
+
 _LoadedLibrary _loadLibraryWithPath() {
   final envLib = Platform.environment['KEEPASSY_FFI_LIB'];
   if (envLib != null && envLib.isNotEmpty) {
-    return _LoadedLibrary(DynamicLibrary.open(envLib), envLib);
+    return _openCompatibleLibrary(envLib);
   }
 
   final libName = _platformLibraryName();
   final searched = <String>[];
+  final rejected = <String>[];
 
   final executableDir = File(Platform.resolvedExecutable).parent.path;
   final directCandidates = [
@@ -161,14 +154,16 @@ _LoadedLibrary _loadLibraryWithPath() {
   for (final candidate in directCandidates) {
     searched.add(candidate);
     if (File(candidate).existsSync()) {
-      return _LoadedLibrary(DynamicLibrary.open(candidate), candidate);
+      final loaded = _tryOpenCompatibleLibrary(candidate, rejected);
+      if (loaded != null) return loaded;
     }
   }
 
   try {
-    return _LoadedLibrary(DynamicLibrary.open(libName), libName);
-  } catch (_) {
+    return _openCompatibleLibrary(libName);
+  } catch (err) {
     searched.add(libName);
+    rejected.add('$libName: $err');
   }
 
   final cwd = Directory.current.path;
@@ -177,7 +172,8 @@ _LoadedLibrary _loadLibraryWithPath() {
       final candidate = '$dir/keepass-rs/target/$profile/$libName';
       searched.add(candidate);
       if (File(candidate).existsSync()) {
-        return _LoadedLibrary(DynamicLibrary.open(candidate), candidate);
+        final loaded = _tryOpenCompatibleLibrary(candidate, rejected);
+        if (loaded != null) return loaded;
       }
     }
   }
@@ -186,8 +182,34 @@ _LoadedLibrary _loadLibraryWithPath() {
     'Cannot load keepass_ffi shared library. '
     'Build it first: cd keepass-rs && cargo build -p keepass_ffi --release\n'
     'Or set KEEPASSY_FFI_LIB to the full shared-library path.\n'
-    'Searched: ${searched.join(', ')}',
+    'Searched: ${searched.join(', ')}'
+    '${rejected.isEmpty ? '' : '\nRejected: ${rejected.join('; ')}'}',
   );
+}
+
+_LoadedLibrary? _tryOpenCompatibleLibrary(String path, List<String> rejected) {
+  try {
+    return _openCompatibleLibrary(path);
+  } on Object catch (err) {
+    rejected.add('$path: $err');
+    return null;
+  }
+}
+
+_LoadedLibrary _openCompatibleLibrary(String path) {
+  final library = DynamicLibrary.open(path);
+  for (final symbol in _requiredFfiSymbols) {
+    try {
+      library.lookup<NativeFunction<Void Function()>>(symbol);
+    } on Object catch (err) {
+      throw VaultRepositoryException(
+        'Incompatible keepass_ffi shared library at $path. '
+        'Missing symbol $symbol. Rebuild and copy libkeepass_ffi. '
+        'Lookup error: $err',
+      );
+    }
+  }
+  return _LoadedLibrary(library, path);
 }
 
 String _platformLibraryName() {
@@ -253,7 +275,9 @@ class FfiVaultRepository implements VaultRepository {
     _isDirty = _lib.lookupFunction<_IsDirtyNative, _IsDirtyDart>(
       'keepassy_is_dirty',
     );
-    _save = _lib.lookupFunction<_SaveNative, _SaveDart>('keepassy_save');
+    _saveCurrent = _lib.lookupFunction<_IsDirtyNative, _IsDirtyDart>(
+      'keepassy_save_current',
+    );
     _changePassword = _lib
         .lookupFunction<_ChangePasswordNative, _ChangePasswordDart>(
           'keepassy_change_password_json',
@@ -328,7 +352,7 @@ class FfiVaultRepository implements VaultRepository {
   late final _JsonWithIdDart _permanentlyDeleteEntryJson;
   late final _IsDirtyDart _emptyRecycleBinJson;
   late final _IsDirtyDart _isDirty;
-  late final _SaveDart _save;
+  late final _IsDirtyDart _saveCurrent;
   late final _ChangePasswordDart _changePassword;
   late final _JsonWithRequestDart _setCustomFieldJson;
   late final _JsonWithTwoIdsDart _deleteCustomFieldJson;
@@ -580,25 +604,10 @@ class FfiVaultRepository implements VaultRepository {
   }
 
   @override
-  Future<void> save({
-    required String masterPassword,
-    String? keyfilePath,
-  }) async {
+  Future<void> save() async {
     final session = _requireSession();
-    final passwordPtr = masterPassword.toNativeUtf8();
-    final keyfilePtr = (keyfilePath != null && keyfilePath.trim().isNotEmpty)
-        ? keyfilePath.toNativeUtf8()
-        : nullptr;
-
-    try {
-      final result = _save(session, passwordPtr, keyfilePtr);
-      _readJsonObject(result);
-    } finally {
-      calloc.free(passwordPtr);
-      if (keyfilePtr != nullptr) {
-        calloc.free(keyfilePtr);
-      }
-    }
+    final result = _saveCurrent(session);
+    _readJsonObject(result);
   }
 
   // --- P3: custom fields ---

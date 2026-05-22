@@ -959,7 +959,7 @@ Acceptance:
 Run backend checks before closing backend or FFI work:
 
 ```bash
-cd /home/zzy/Desktop/code/KeepassY/keepass-rs
+cd keepass-rs
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
@@ -968,10 +968,10 @@ cargo test --workspace
 Run frontend checks before closing Flutter work:
 
 ```bash
-cd /home/zzy/Desktop/code/KeepassY/keepassy_flutter
-/home/zzy/app/flutter/bin/dart format lib test
-/home/zzy/app/flutter/bin/flutter analyze
-/home/zzy/app/flutter/bin/flutter test
+cd keepassy_flutter
+dart format lib test
+flutter analyze
+flutter test
 ```
 
 Run end-to-end checks before closing an integrated milestone:

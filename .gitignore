@@ -1,2 +1,16 @@
 dist/
 keepass-rs/target/
+keepassy_flutter/build/
+keepassy_flutter/.dart_tool/
+
+*.kdbx
+*.key
+*.log
+.env
+.env.*
+.DS_Store
+
+.codex
+.codex/
+**/.codex/
+**/.claude/settings.local.json

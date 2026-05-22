@@ -26,10 +26,10 @@ This repository currently contains backend-only code. It does not create or depe
 Use `KEEPASS_RS_PASSWORD` to avoid passing the master password as a command argument. If it is not set, the CLI prompts interactively.
 
 ```bash
-cargo run -p keepass_cli -- local tree --file ./Database.kdbx
-cargo run -p keepass_cli -- local entries --file ./Database.kdbx --group <UUID>
-cargo run -p keepass_cli -- local show --file ./Database.kdbx --entry <UUID>
-cargo run -p keepass_cli -- local tree --file ./Database.kdbx --keyfile ./Database.key
+cargo run -p keepass_cli -- local tree --file ./path/to/vault.kdbx
+cargo run -p keepass_cli -- local entries --file ./path/to/vault.kdbx --group <UUID>
+cargo run -p keepass_cli -- local show --file ./path/to/vault.kdbx --entry <UUID>
+cargo run -p keepass_cli -- local tree --file ./path/to/vault.kdbx --keyfile ./path/to/vault.key
 cargo run -p keepass_cli -- webdav tree --url https://example.com/remote.php/dav/files/user/db.kdbx
 ```
 
@@ -62,7 +62,7 @@ When configured, the integration tests verify:
 
 The missing-file test always runs; it does not need a database fixture.
 
-The local `Database.kdbx` file is intentionally ignored and is not treated as a public fixture.
+Local `.kdbx` and keyfile material are intentionally ignored and are not treated as public fixtures.
 
 ## Current Constraints
 

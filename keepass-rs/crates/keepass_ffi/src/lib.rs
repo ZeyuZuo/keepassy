@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::ptr;
 use std::sync::Mutex;
 use tokio::runtime::Runtime;
+use zeroize::Zeroizing;
 
 /// Opaque session handle owned by FFI callers.
 pub struct KeepassYSession {
@@ -84,7 +85,8 @@ pub extern "C" fn keepassy_open_local(
 ) -> KeepassYFfiResult {
     let result = (|| {
         let path = read_required_c_string(path, "path")?;
-        let master_password = read_required_c_string(master_password, "master_password")?;
+        let master_password =
+            Zeroizing::new(read_required_c_string(master_password, "master_password")?);
         let keyfile_path = read_optional_c_string(keyfile_path)?;
         let keyfile = match keyfile_path {
             Some(path) => Some(std::fs::read(path).map_err(VaultError::Io)?),
@@ -96,10 +98,11 @@ pub extern "C" fn keepassy_open_local(
         let session = match keyfile.as_deref() {
             Some(keyfile) => runtime.block_on(service.open_local_with_keyfile(
                 PathBuf::from(path),
-                master_password,
+                master_password.as_str(),
                 keyfile,
             ))?,
-            None => runtime.block_on(service.open_local(PathBuf::from(path), master_password))?,
+            None => runtime
+                .block_on(service.open_local(PathBuf::from(path), master_password.as_str()))?,
         };
         let snapshot = session.snapshot();
         Ok((session, runtime, snapshot))
@@ -137,7 +140,8 @@ pub extern "C" fn keepassy_open_webdav(
 ) -> KeepassYFfiResult {
     let result = (|| {
         let request = read_json_request::<OpenWebDavRequest>(request_json, "request_json")?;
-        let master_password = read_required_c_string(master_password, "master_password")?;
+        let master_password =
+            Zeroizing::new(read_required_c_string(master_password, "master_password")?);
         let mut config = WebDavConfig::new(request.url)?;
         if request.username.as_deref().is_some_and(|v| !v.is_empty())
             || request.password.as_deref().is_some_and(|v| !v.is_empty())
@@ -162,10 +166,10 @@ pub extern "C" fn keepassy_open_webdav(
         let session = match keyfile.as_deref() {
             Some(keyfile) => runtime.block_on(service.open_webdav_with_keyfile(
                 config,
-                master_password,
+                master_password.as_str(),
                 keyfile,
             ))?,
-            None => runtime.block_on(service.open_webdav(config, master_password))?,
+            None => runtime.block_on(service.open_webdav(config, master_password.as_str()))?,
         };
         let snapshot = session.snapshot();
         Ok((session, runtime, snapshot))
@@ -194,7 +198,8 @@ pub extern "C" fn keepassy_create_local(
 ) -> KeepassYFfiResult {
     let result = (|| {
         let request = read_json_request::<CreateLocalRequest>(request_json, "request_json")?;
-        let master_password = read_required_c_string(master_password, "master_password")?;
+        let master_password =
+            Zeroizing::new(read_required_c_string(master_password, "master_password")?);
         let keyfile = match request.keyfile_path.as_deref() {
             Some(path) if !path.trim().is_empty() => {
                 Some(std::fs::read(path).map_err(VaultError::Io)?)
@@ -207,11 +212,12 @@ pub extern "C" fn keepassy_create_local(
         let session = match keyfile.as_deref() {
             Some(keyfile) => runtime.block_on(service.create_local_with_keyfile(
                 PathBuf::from(request.path),
-                master_password,
+                master_password.as_str(),
                 keyfile,
             ))?,
-            None => runtime
-                .block_on(service.create_local(PathBuf::from(request.path), master_password))?,
+            None => runtime.block_on(
+                service.create_local(PathBuf::from(request.path), master_password.as_str()),
+            )?,
         };
         let snapshot = session.snapshot();
         Ok((session, runtime, snapshot))
@@ -592,11 +598,11 @@ pub extern "C" fn keepassy_change_password_json(
     keyfile_path: *const c_char,
 ) -> KeepassYFfiResult {
     let old_password = match read_required_c_string(old_password, "old_password") {
-        Ok(v) => v,
+        Ok(v) => Zeroizing::new(v),
         Err(e) => return error_result(e),
     };
     let new_password = match read_required_c_string(new_password, "new_password") {
-        Ok(v) => v,
+        Ok(v) => Zeroizing::new(v),
         Err(e) => return error_result(e),
     };
     let keyfile_path = match read_optional_c_string(keyfile_path) {
@@ -616,8 +622,8 @@ pub extern "C" fn keepassy_change_password_json(
             .lock()
             .map_err(|_| VaultError::Storage("session lock poisoned".to_string()))?;
         ffi_session.runtime.block_on(vault.change_password(
-            &old_password,
-            &new_password,
+            old_password.as_str(),
+            new_password.as_str(),
             keyfile.as_deref(),
         ))?;
         Ok(SaveBody {
@@ -634,7 +640,7 @@ pub extern "C" fn keepassy_save(
     keyfile_path: *const c_char,
 ) -> KeepassYFfiResult {
     let master_password = match read_required_c_string(master_password, "master_password") {
-        Ok(value) => value,
+        Ok(value) => Zeroizing::new(value),
         Err(err) => return error_result(err),
     };
     let keyfile_path = match read_optional_c_string(keyfile_path) {
@@ -657,9 +663,28 @@ pub extern "C" fn keepassy_save(
         match keyfile.as_deref() {
             Some(keyfile) => ffi_session
                 .runtime
-                .block_on(vault.save_with_keyfile(&master_password, keyfile))?,
-            None => ffi_session.runtime.block_on(vault.save(&master_password))?,
+                .block_on(vault.save_with_keyfile(master_password.as_str(), keyfile))?,
+            None => ffi_session
+                .runtime
+                .block_on(vault.save(master_password.as_str()))?,
         }
+        Ok(SaveBody {
+            saved: true,
+            dirty: vault.is_dirty(),
+        })
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn keepassy_save_current(session: *mut KeepassYSession) -> KeepassYFfiResult {
+    with_ffi_session(session, |ffi_session| {
+        let mut vault = ffi_session
+            .inner
+            .lock()
+            .map_err(|_| VaultError::Storage("session lock poisoned".to_string()))?;
+        ffi_session
+            .runtime
+            .block_on(vault.save_with_current_credentials())?;
         Ok(SaveBody {
             saved: true,
             dirty: vault.is_dirty(),
@@ -1031,7 +1056,7 @@ mod tests {
         let updated = response_json(keepassy_update_entry_json(session, update.as_ptr()));
         assert_eq!(updated["title"], "Email Updated");
 
-        let save = response_json(keepassy_save(session, password_c.as_ptr(), ptr::null()));
+        let save = response_json(keepassy_save_current(session));
         assert_eq!(save["saved"], true);
         assert_eq!(save["dirty"], false);
         // SAFETY: `session` was returned by this crate and is closed once.
@@ -1229,7 +1254,7 @@ mod tests {
         let created = response_json(keepassy_create_entry_json(session, create.as_ptr()));
         assert_eq!(created["title"], "Remote");
 
-        let error = response_error(keepassy_save(session, password_c.as_ptr(), ptr::null()));
+        let error = response_error(keepassy_save_current(session));
         assert!(error["error"]
             .as_str()
             .unwrap()
@@ -1272,7 +1297,7 @@ mod tests {
         let created = response_json(keepassy_create_entry_json(session, create.as_ptr()));
         assert_eq!(created["title"], "Saved Remote");
 
-        let save = response_json(keepassy_save(session, password_c.as_ptr(), ptr::null()));
+        let save = response_json(keepassy_save_current(session));
         assert_eq!(save["saved"], true);
         assert_eq!(save["dirty"], false);
 

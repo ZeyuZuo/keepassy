@@ -156,7 +156,7 @@ Done when:
 - Run before closing frontend tasks:
 
 ```bash
-/home/zzy/app/flutter/bin/dart format lib test
-/home/zzy/app/flutter/bin/flutter analyze
-/home/zzy/app/flutter/bin/flutter test
+dart format lib test
+flutter analyze
+flutter test
 ```

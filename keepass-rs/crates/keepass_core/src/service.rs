@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Cursor;
 use std::path::PathBuf;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// Standard KeePass fields that map to dedicated [`EntryDetail`] fields rather
 /// than appearing in [`EntryDetail::fields`].
@@ -139,6 +140,7 @@ impl VaultService {
 pub struct VaultSession {
     db: Database,
     original_bytes: Vec<u8>,
+    save_credentials: SaveCredentials,
     source: String,
     metadata: Option<crate::dto::RemoteMetadata>,
     storage: Box<dyn StorageBackend>,
@@ -159,10 +161,12 @@ impl VaultSession {
         let key = build_database_key(master_password, keyfile)?;
         let db = Database::parse(&bytes, key)
             .map_err(|err| VaultError::DatabaseOpen(err.to_string()))?;
+        let save_credentials = SaveCredentials::new(master_password, keyfile)?;
         let (group_tree, entry_details) = build_tree(&db);
         Ok(Self {
             db,
             original_bytes: bytes,
+            save_credentials,
             source,
             metadata,
             storage,
@@ -308,18 +312,24 @@ impl VaultSession {
             .ok_or_else(|| VaultError::EntryNotFound(req.entry_id.clone()))?;
 
         let changed = [
-            apply_update(entry, fields::TITLE, req.title.as_deref()),
-            apply_update(entry, fields::USERNAME, req.username.as_deref()),
-            apply_update(entry, fields::PASSWORD, req.password.as_deref()),
-            apply_update(entry, fields::URL, req.url.as_deref()),
-            apply_update(entry, fields::NOTES, req.notes.as_deref()),
+            would_update(entry, fields::TITLE, req.title.as_deref()),
+            would_update(entry, fields::USERNAME, req.username.as_deref()),
+            would_update(entry, fields::PASSWORD, req.password.as_deref()),
+            would_update(entry, fields::URL, req.url.as_deref()),
+            would_update(entry, fields::NOTES, req.notes.as_deref()),
         ]
         .into_iter()
         .any(|c| c);
-        let expiry_changed = apply_expiry_update(entry, req.expires, req.expiry_time.as_deref());
+        let expiry_changed = would_expiry_update(entry, req.expires, req.expiry_time.as_deref());
 
         if changed || expiry_changed {
             entry.update_history();
+            apply_update(entry, fields::TITLE, req.title.as_deref());
+            apply_update(entry, fields::USERNAME, req.username.as_deref());
+            apply_update(entry, fields::PASSWORD, req.password.as_deref());
+            apply_update(entry, fields::URL, req.url.as_deref());
+            apply_update(entry, fields::NOTES, req.notes.as_deref());
+            apply_expiry_update(entry, req.expires, req.expiry_time.as_deref());
             self.rebuild_cache();
             self.dirty = true;
         }
@@ -451,8 +461,8 @@ impl VaultSession {
                 Value::unprotected(req.bytes)
             },
         };
-        entry.attachments.insert(req.name.clone(), attachment);
         entry.update_history();
+        entry.attachments.insert(req.name.clone(), attachment);
 
         self.rebuild_cache();
         self.dirty = true;
@@ -467,10 +477,11 @@ impl VaultSession {
     pub fn remove_attachment(&mut self, entry_id: &str, name: &str) -> Result<()> {
         let entry = find_entry_mut(&mut self.db.root, entry_id)
             .ok_or_else(|| VaultError::EntryNotFound(entry_id.to_string()))?;
-        if entry.attachments.remove(name).is_none() {
+        if !entry.attachments.contains_key(name) {
             return Err(VaultError::AttachmentNotFound(name.to_string()));
         }
         entry.update_history();
+        entry.attachments.remove(name);
 
         self.rebuild_cache();
         self.dirty = true;
@@ -488,12 +499,12 @@ impl VaultSession {
             None => true,
         };
         if changed {
+            entry.update_history();
             if req.protect {
                 entry.set_protected(req.key.clone(), req.value);
             } else {
                 entry.set_unprotected(req.key.clone(), req.value);
             }
-            entry.update_history();
             self.rebuild_cache();
             self.dirty = true;
         }
@@ -507,8 +518,9 @@ impl VaultSession {
         let entry = find_entry_mut(&mut self.db.root, entry_id)
             .ok_or_else(|| VaultError::EntryNotFound(entry_id.to_string()))?;
 
-        if entry.fields.remove(key).is_some() {
+        if entry.fields.contains_key(key) {
             entry.update_history();
+            entry.fields.remove(key);
             self.rebuild_cache();
             self.dirty = true;
         }
@@ -671,14 +683,36 @@ impl VaultSession {
         self.db
             .save(&mut buf, new_key)
             .map_err(|e| VaultError::DatabaseSave(e.to_string()))?;
+        self.storage.write(&buf).await?;
         self.original_bytes = buf;
-        self.storage.write(&self.original_bytes).await?;
+        self.save_credentials = SaveCredentials::new(new_password, keyfile)?;
+        if let Ok(Some(metadata)) = self.storage.metadata().await {
+            self.metadata = Some(metadata);
+        }
+        self.dirty = false;
         Ok(())
     }
 
     // --- save ---
 
     /// Persist changes to the storage backend.
+    ///
+    /// Uses the credentials captured when the vault was opened or created. This
+    /// avoids keeping the master password in the Flutter UI while still allowing
+    /// one-click save inside the active native session.
+    pub async fn save_with_current_credentials(&mut self) -> Result<()> {
+        let master_password = self.save_credentials.master_password.clone();
+        let keyfile = self
+            .save_credentials
+            .keyfile
+            .as_ref()
+            .map(|keyfile| Zeroizing::new(keyfile.to_vec()));
+        self.save_inner(&master_password, keyfile.as_deref().map(Vec::as_slice))
+            .await
+    }
+
+    /// Persist changes to the storage backend with explicitly supplied
+    /// credentials.
     ///
     /// Requires the master password to re-derive the encryption key. For
     /// WebDAV backends this uses `If-Match` to detect remote conflicts.
@@ -922,6 +956,21 @@ fn build_database_key(master_password: &str, keyfile: Option<&[u8]>) -> Result<D
     Ok(key)
 }
 
+struct SaveCredentials {
+    master_password: Zeroizing<String>,
+    keyfile: Option<Zeroizing<Vec<u8>>>,
+}
+
+impl SaveCredentials {
+    fn new(master_password: &str, keyfile: Option<&[u8]>) -> Result<Self> {
+        build_database_key(master_password, keyfile)?;
+        Ok(Self {
+            master_password: Zeroizing::new(master_password.to_string()),
+            keyfile: keyfile.map(|bytes| Zeroizing::new(bytes.to_vec())),
+        })
+    }
+}
+
 fn write_new_database(path: &PathBuf, bytes: &[u8]) -> Result<()> {
     if path.exists() {
         return Err(VaultError::InvalidRequest(format!(
@@ -976,6 +1025,17 @@ fn set_opt(entry: &mut Entry, key: &str, value: Option<&str>) {
 }
 
 /// `None` = don't touch, `Some("")` = clear, `Some(v)` = set to v.
+fn would_update(entry: &Entry, key: &str, value: Option<&str>) -> bool {
+    match value {
+        None => false,
+        Some("") => entry.fields.contains_key(key),
+        Some(v) => !entry
+            .fields
+            .get(key)
+            .is_some_and(|current| current.get() == v),
+    }
+}
+
 fn apply_update(entry: &mut Entry, key: &str, value: Option<&str>) -> bool {
     match value {
         None => false,
@@ -997,6 +1057,20 @@ fn apply_update(entry: &mut Entry, key: &str, value: Option<&str>) -> bool {
 
 /// `None` = don't touch, `Some(false)` = clear expires,
 /// `Some(true)` = set expires. `expiry_str` likewise.
+fn would_expiry_update(entry: &Entry, expires: Option<bool>, expiry_str: Option<&str>) -> bool {
+    if let Some(exp) = expires {
+        if entry.times.expires != Some(exp) {
+            return true;
+        }
+    }
+    match expiry_str {
+        None => false,
+        Some("") => entry.times.expiry.is_some(),
+        Some(t) => chrono::NaiveDateTime::parse_from_str(t, "%Y-%m-%dT%H:%M:%S")
+            .is_ok_and(|dt| entry.times.expiry != Some(dt)),
+    }
+}
+
 fn apply_expiry_update(entry: &mut Entry, expires: Option<bool>, expiry_str: Option<&str>) -> bool {
     let mut changed = false;
     if let Some(exp) = expires {
@@ -1222,6 +1296,7 @@ mod tests {
         VaultSession {
             db,
             original_bytes,
+            save_credentials: SaveCredentials::new("test-password", None).unwrap(),
             source: "test".into(),
             metadata: None,
             storage: Box::new(storage),
@@ -1875,10 +1950,10 @@ mod tests {
         let history = session.entry_history(&created.id).unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].index, 0);
-        assert_eq!(history[0].title.as_deref(), Some("Changed"));
+        assert_eq!(history[0].title.as_deref(), Some("Original"));
 
         let snapshot = session.entry_history_detail(&created.id, 0).unwrap();
-        assert_eq!(snapshot.title.as_deref(), Some("Changed"));
+        assert_eq!(snapshot.title.as_deref(), Some("Original"));
         assert!(matches!(
             session.entry_history_detail(&created.id, 99).unwrap_err(),
             VaultError::HistoryNotFound(_)
@@ -1941,6 +2016,91 @@ mod tests {
             .get("note.txt")
             .unwrap();
         assert_eq!(attachment.data.get(), b"hello");
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn save_with_current_credentials_writes_without_resupplied_password() {
+        let mut session = test_session();
+        let root_id = session.db.root.uuid.to_string();
+        session
+            .create_entry(CreateEntryRequest {
+                group_id: root_id,
+                title: Some("Current Credential Save".into()),
+                username: None,
+                password: None,
+                url: None,
+                notes: None,
+                custom_fields: BTreeMap::new(),
+                protected_custom_fields: vec![],
+                expires: false,
+                expiry_time: None,
+            })
+            .unwrap();
+
+        let tmp = std::env::temp_dir().join(format!(
+            "keepass-rs-save-current-{}.kdbx",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&tmp);
+        session.storage = Box::new(LocalFileStorage::new(&tmp));
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(session.save_with_current_credentials())
+            .unwrap();
+
+        let bytes = std::fs::read(&tmp).unwrap();
+        let reopened =
+            Database::parse(&bytes, DatabaseKey::new().with_password("test-password")).unwrap();
+        assert_eq!(reopened.root.entries.len(), 1);
+        assert_eq!(
+            reopened.root.entries[0].get_title(),
+            Some("Current Credential Save")
+        );
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn change_password_updates_current_save_credentials() {
+        let mut session = test_session();
+        let tmp = std::env::temp_dir().join(format!(
+            "keepass-rs-save-current-after-password-change-{}.kdbx",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&tmp);
+        session.storage = Box::new(LocalFileStorage::new(&tmp));
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(session.change_password("test-password", "new-password", None))
+            .unwrap();
+
+        let root_id = session.db.root.uuid.to_string();
+        session
+            .create_entry(CreateEntryRequest {
+                group_id: root_id,
+                title: Some("After Password Change".into()),
+                username: None,
+                password: None,
+                url: None,
+                notes: None,
+                custom_fields: BTreeMap::new(),
+                protected_custom_fields: vec![],
+                expires: false,
+                expiry_time: None,
+            })
+            .unwrap();
+        rt.block_on(session.save_with_current_credentials())
+            .unwrap();
+
+        let bytes = std::fs::read(&tmp).unwrap();
+        assert!(
+            Database::parse(&bytes, DatabaseKey::new().with_password("test-password")).is_err()
+        );
+        let reopened =
+            Database::parse(&bytes, DatabaseKey::new().with_password("new-password")).unwrap();
+        assert_eq!(reopened.root.entries.len(), 1);
 
         let _ = std::fs::remove_file(&tmp);
     }

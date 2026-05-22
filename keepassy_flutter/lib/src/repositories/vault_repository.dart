@@ -55,7 +55,7 @@ abstract class VaultRepository {
 
   Future<bool> isDirty();
 
-  Future<void> save({required String masterPassword, String? keyfilePath});
+  Future<void> save();
 
   Future<void> close();
 
@@ -384,10 +384,7 @@ class MockVaultRepository implements VaultRepository {
   Future<bool> isDirty() async => _dirty;
 
   @override
-  Future<void> save({
-    required String masterPassword,
-    String? keyfilePath,
-  }) async {
+  Future<void> save() async {
     await Future<void>.delayed(const Duration(milliseconds: 200));
     _dirty = false;
   }

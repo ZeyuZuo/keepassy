@@ -13,6 +13,7 @@ keepass_core = { path = "../keepass_core" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 keepass.workspace = true

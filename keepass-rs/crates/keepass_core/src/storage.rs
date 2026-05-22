@@ -5,8 +5,9 @@ use reqwest::header::{CONTENT_LENGTH, ETAG, IF_MATCH, LAST_MODIFIED};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use url::Url;
 
 // --- StorageBackend trait ---
@@ -51,7 +52,7 @@ impl StorageBackend for LocalFileStorage {
     }
 
     async fn write(&self, bytes: &[u8]) -> Result<()> {
-        Ok(fs::write(&self.path, bytes).await?)
+        write_file_atomically(&self.path, bytes).await
     }
 
     async fn metadata(&self) -> Result<Option<RemoteMetadata>> {
@@ -362,6 +363,40 @@ fn check_write_status(status: reqwest::StatusCode) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn write_file_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+    let temp_path = atomic_temp_path(path);
+    let result = async {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+            .await?;
+        file.write_all(bytes).await?;
+        file.sync_all().await?;
+        drop(file);
+        fs::rename(&temp_path, path).await?;
+        Ok(())
+    }
+    .await;
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path).await;
+    }
+    result.map_err(VaultError::Io)
+}
+
+fn atomic_temp_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("vault.kdbx");
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    path.with_file_name(format!(".{file_name}.tmp-{}-{nonce}", std::process::id()))
 }
 
 // --- Tests ---

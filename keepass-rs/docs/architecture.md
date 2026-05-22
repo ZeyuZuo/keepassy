@@ -39,7 +39,7 @@ Storage is abstracted behind `StorageBackend`.
 - `LocalFileStorage` reads and writes bytes from the local filesystem.
 - `WebDavStorage` uses `reqwest` and standard HTTP/WebDAV methods for `GET`, `PUT`, and metadata.
 
-The KeePass parser receives bytes and does not know whether the source was local or remote. A session keeps the original encrypted bytes so save can verify the supplied master password before writing; this prevents an accidental save with the wrong password from silently changing the vault password.
+The KeePass parser receives bytes and does not know whether the source was local or remote. A session keeps the original encrypted bytes and the active save credentials in native memory so the Flutter UI does not need to retain the master password after unlock. Explicit save calls can still provide credentials for tests or non-UI callers.
 
 ## FFI Adapter
 

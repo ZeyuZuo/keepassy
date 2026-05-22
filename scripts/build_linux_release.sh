@@ -6,12 +6,13 @@ RUST_DIR="${ROOT_DIR}/keepass-rs"
 FLUTTER_DIR="${ROOT_DIR}/keepassy_flutter"
 BUNDLE_DIR="${FLUTTER_DIR}/build/linux/x64/release/bundle"
 PACKAGE_DIR="${ROOT_DIR}/dist/linux/KeePassY"
+FLUTTER_BIN="${FLUTTER_BIN:-flutter}"
 
 cargo build --manifest-path "${RUST_DIR}/Cargo.toml" -p keepass_ffi --release
 
 (
   cd "${FLUTTER_DIR}"
-  /home/zzy/app/flutter/bin/flutter build linux --release
+  "${FLUTTER_BIN}" build linux --release
 )
 
 install -Dm755 \

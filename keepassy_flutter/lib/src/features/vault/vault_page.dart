@@ -1890,11 +1890,11 @@ class _VaultPageState extends State<VaultPage> {
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 920;
                 if (compact) {
-                  return Column(
-                    children: [
-                      SizedBox(
-                        height: 168,
-                        child: PaneSurface(
+                  return PaneSurface(
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: 148,
                           child: _GroupRail(
                             root: _groupTree,
                             selectedGroup: _selectedGroup,
@@ -1908,10 +1908,8 @@ class _VaultPageState extends State<VaultPage> {
                                 _permanentlyDeleteGroupDialog,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      Expanded(
-                        child: PaneSurface(
+                        const Divider(height: 1),
+                        Expanded(
                           child: _EntryList(
                             group: _selectedGroup,
                             entries: entries,
@@ -1944,11 +1942,9 @@ class _VaultPageState extends State<VaultPage> {
                                 : null,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 340,
-                        child: PaneSurface(
+                        const Divider(height: 1),
+                        SizedBox(
+                          height: 340,
                           child: _DetailPane(
                             detail: _detail,
                             loading: _loadingDetail,
@@ -2010,16 +2006,16 @@ class _VaultPageState extends State<VaultPage> {
                             },
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   );
                 }
 
-                return Row(
-                  children: [
-                    SizedBox(
-                      width: 280,
-                      child: PaneSurface(
+                return PaneSurface(
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 256,
                         child: _GroupRail(
                           root: _groupTree,
                           selectedGroup: _selectedGroup,
@@ -2031,11 +2027,9 @@ class _VaultPageState extends State<VaultPage> {
                           onPermanentDeleteGroup: _permanentlyDeleteGroupDialog,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    SizedBox(
-                      width: 400,
-                      child: PaneSurface(
+                      const VerticalDivider(width: 1),
+                      SizedBox(
+                        width: 400,
                         child: _EntryList(
                           group: _selectedGroup,
                           entries: entries,
@@ -2068,10 +2062,8 @@ class _VaultPageState extends State<VaultPage> {
                               : null,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: PaneSurface(
+                      const VerticalDivider(width: 1),
+                      Expanded(
                         child: _DetailPane(
                           detail: _detail,
                           loading: _loadingDetail,
@@ -2132,8 +2124,8 @@ class _VaultPageState extends State<VaultPage> {
                           },
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             ),
@@ -2307,7 +2299,7 @@ class _GroupRailState extends State<_GroupRail> {
 
     final header = !widget.horizontal
         ? Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
+            padding: const EdgeInsets.fromLTRB(14, 10, 10, 2),
             child: Row(
               children: [
                 Text(
@@ -2334,14 +2326,14 @@ class _GroupRailState extends State<_GroupRail> {
           header,
           Expanded(
             child: ListView.separated(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               scrollDirection: Axis.horizontal,
               itemCount: groups.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
               itemBuilder: (context, index) {
                 final item = groups[index];
                 return SizedBox(
-                  width: 180,
+                  width: 164,
                   child: _GroupButton(
                     group: item.group,
                     depth: item.depth,
@@ -2371,9 +2363,9 @@ class _GroupRailState extends State<_GroupRail> {
         header,
         Expanded(
           child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             itemCount: groups.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 6),
+            separatorBuilder: (_, _) => const SizedBox(height: 3),
             itemBuilder: (context, index) {
               final item = groups[index];
               return _GroupButton(
@@ -2569,7 +2561,7 @@ class _GroupButton extends StatelessWidget {
     final entryLabel = group.entryCount == 1 ? 'entry' : 'entries';
     final isRecycledGroup = inRecycleBin && !group.isRecycleBin;
     final isRecycleRoot = group.isRecycleBin;
-    final horizontalInset = 12.0 + (depth.clamp(0, 4) * 14.0);
+    final horizontalInset = 10.0 + (depth.clamp(0, 4) * 10.0);
     final recycleAccent = colorScheme.error;
     final recycleContainer = colorScheme.errorContainer.withValues(
       alpha: selected ? 0.55 : 0.18,
@@ -2603,20 +2595,20 @@ class _GroupButton extends StatelessWidget {
       curve: KeepassYMotion.curve,
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(KeepassYRadius.control),
+        borderRadius: BorderRadius.circular(KeepassYRadius.compact),
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(KeepassYRadius.control),
+        borderRadius: BorderRadius.circular(KeepassYRadius.compact),
         child: InkWell(
-          borderRadius: BorderRadius.circular(KeepassYRadius.control),
+          borderRadius: BorderRadius.circular(KeepassYRadius.compact),
           onTap: () => onSelected(group),
           child: Padding(
-            padding: EdgeInsets.fromLTRB(horizontalInset, 12, 12, 12),
+            padding: EdgeInsets.fromLTRB(horizontalInset, 8, 10, 8),
             child: Row(
               children: [
                 SizedBox.square(
-                  dimension: 24,
+                  dimension: 22,
                   child: canToggle
                       ? IconButton(
                           tooltip: collapsed
@@ -2629,7 +2621,7 @@ class _GroupButton extends StatelessWidget {
                             collapsed
                                 ? Icons.keyboard_arrow_right
                                 : Icons.keyboard_arrow_down,
-                            size: 20,
+                            size: 19,
                             color: iconColor,
                           ),
                         )
@@ -2645,8 +2637,9 @@ class _GroupButton extends StatelessWidget {
                       ? Icons.folder_outlined
                       : Icons.folder_copy_outlined,
                   color: iconColor,
+                  size: 20,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2660,6 +2653,7 @@ class _GroupButton extends StatelessWidget {
                           fontWeight: isRecycleRoot
                               ? FontWeight.w700
                               : FontWeight.w600,
+                          fontSize: 13,
                         ),
                       ),
                       Text(
@@ -2747,6 +2741,8 @@ class _EntryList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Column(
       children: [
         Padding(
@@ -2832,6 +2828,16 @@ class _EntryList extends StatelessWidget {
                       selected: searchAllGroups,
                       onSelected: (selected) =>
                           onSearchAllGroupsChanged!(selected),
+                      backgroundColor: colorScheme.surfaceContainerHigh,
+                      selectedColor: colorScheme.secondaryContainer,
+                      checkmarkColor: colorScheme.onSecondaryContainer,
+                      labelStyle: TextStyle(
+                        color: searchAllGroups
+                            ? colorScheme.onSecondaryContainer
+                            : colorScheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      side: BorderSide(color: colorScheme.outlineVariant),
                     ),
                   ],
                 ],
@@ -3116,62 +3122,76 @@ class _DetailPane extends StatelessWidget {
   Widget _buildReadMode(BuildContext context) {
     final detail = this.detail!;
     final colorScheme = Theme.of(context).colorScheme;
+    final actions = <Widget>[
+      if (inRecycleBin) ...[
+        if (onRestore != null)
+          _DetailActionButton(
+            label: 'Restore',
+            icon: Icons.restore_from_trash_outlined,
+            onPressed: onRestore,
+            primary: true,
+          ),
+        if (onPermanentDelete != null)
+          _DetailActionButton(
+            label: 'Delete forever',
+            icon: Icons.delete_forever,
+            onPressed: onPermanentDelete,
+            destructive: true,
+          ),
+      ] else ...[
+        if (onMoveEntry != null)
+          _DetailActionButton(
+            label: 'Move',
+            icon: Icons.drive_file_move_outlined,
+            onPressed: onMoveEntry,
+          ),
+        if (onDuplicateEntry != null)
+          _DetailActionButton(
+            label: 'Duplicate',
+            icon: Icons.copy_all_outlined,
+            onPressed: onDuplicateEntry,
+          ),
+        _DetailActionButton(
+          label: 'Edit',
+          icon: Icons.edit_outlined,
+          onPressed: onEdit,
+        ),
+        _DetailActionButton(
+          label: 'Delete',
+          icon: Icons.delete_outline,
+          onPressed: onDelete,
+          destructive: true,
+        ),
+      ],
+    ];
 
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: Text(
                 detail.displayTitle,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-            if (inRecycleBin) ...[
-              if (onRestore != null)
-                IconButton(
-                  tooltip: 'Restore entry',
-                  onPressed: onRestore,
-                  icon: const Icon(Icons.restore_from_trash_outlined),
+            if (actions.isNotEmpty) ...[
+              const SizedBox(width: 16),
+              Flexible(
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: actions,
+                  ),
                 ),
-              if (onPermanentDelete != null)
-                IconButton(
-                  tooltip: 'Delete permanently',
-                  onPressed: onPermanentDelete,
-                  icon: Icon(Icons.delete_forever, color: colorScheme.error),
-                ),
-            ] else ...[
-              if (onMoveEntry != null)
-                IconButton(
-                  tooltip: 'Move to group',
-                  onPressed: onMoveEntry,
-                  icon: const Icon(Icons.drive_file_move_outlined),
-                ),
-              if (onDuplicateEntry != null)
-                IconButton(
-                  tooltip: 'Duplicate entry',
-                  onPressed: onDuplicateEntry,
-                  icon: const Icon(Icons.copy),
-                ),
-              if (detail.password != null && detail.password!.isNotEmpty)
-                IconButton(
-                  tooltip: 'Copy password',
-                  onPressed: () =>
-                      onCopyToClipboard?.call(detail.password!, 'Password'),
-                  icon: const Icon(Icons.key),
-                ),
-              IconButton(
-                tooltip: 'Edit entry',
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit_outlined),
-              ),
-              IconButton(
-                tooltip: 'Delete entry',
-                onPressed: onDelete,
-                icon: Icon(Icons.delete_outline, color: colorScheme.error),
               ),
             ],
           ],
@@ -3553,12 +3573,6 @@ class _DetailPane extends StatelessWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (value.isNotEmpty)
-              IconButton(
-                tooltip: 'Copy $fieldKey',
-                onPressed: () => onCopyToClipboard?.call(value, fieldKey),
-                icon: const Icon(Icons.copy, size: 18),
-              ),
             IconButton(
               tooltip: visible ? 'Hide $fieldKey' : 'Show $fieldKey',
               onPressed: () => onToggleCustomFieldVisibility?.call(fieldKey),
@@ -3568,6 +3582,12 @@ class _DetailPane extends StatelessWidget {
                     : Icons.visibility_outlined,
               ),
             ),
+            if (value.isNotEmpty)
+              IconButton(
+                tooltip: 'Copy $fieldKey',
+                onPressed: () => onCopyToClipboard?.call(value, fieldKey),
+                icon: const Icon(Icons.copy, size: 18),
+              ),
           ],
         ),
       );
@@ -3619,12 +3639,6 @@ class _DetailPane extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (value.isNotEmpty)
-            IconButton(
-              tooltip: 'Copy password',
-              onPressed: () => onCopyToClipboard?.call(value, 'Password'),
-              icon: const Icon(Icons.copy, size: 18),
-            ),
           IconButton(
             tooltip: visible ? 'Hide password' : 'Show password',
             onPressed: onToggle,
@@ -3634,8 +3648,56 @@ class _DetailPane extends StatelessWidget {
                   : Icons.visibility_outlined,
             ),
           ),
+          if (value.isNotEmpty)
+            IconButton(
+              tooltip: 'Copy password',
+              onPressed: () => onCopyToClipboard?.call(value, 'Password'),
+              icon: const Icon(Icons.copy, size: 18),
+            ),
         ],
       ),
+    );
+  }
+}
+
+class _DetailActionButton extends StatelessWidget {
+  const _DetailActionButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.primary = false,
+    this.destructive = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final bool primary;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    if (primary) {
+      return FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: colorScheme.secondaryContainer,
+          foregroundColor: colorScheme.onSecondaryContainer,
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+      );
+    }
+
+    return TextButton.icon(
+      style: destructive
+          ? TextButton.styleFrom(foregroundColor: colorScheme.error)
+          : null,
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
     );
   }
 }
